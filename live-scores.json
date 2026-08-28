@@ -1,5 +1,5 @@
 {
-  "updated": null,
+  "updated": "2026-08-28",
   "games": {},
-  "note": "Filled by fetch_scores.py when 2026-27 games start."
+  "note": "Fetcher is installed. Wire the live MHSAA/MaxPreps JSON URL in fetch_score_center / a MaxPreps function. First final wins; mismatches flag needsReview."
 }
