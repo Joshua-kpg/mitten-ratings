@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Rim Runner" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <title>Rim Runner — HS Basketball</title>
   <meta name="description" content="Rim Runner is unofficial high school boys basketball rankings, predictions, and weekly picks.">
   <meta property="og:title" content="Rim Runner">
@@ -83,6 +86,11 @@
     @media (min-width: 720px) {
       .split { display: grid; grid-template-columns: 1.3fr 0.9fr; gap: 14px; }
     }
+    .follow-btn {
+      margin-top:12px; width:100%; background:var(--maize); color:var(--blue);
+      border:0; border-radius:12px; padding:12px 14px; font-weight:800; cursor:pointer; font-size:1rem;
+    }
+    .follow-btn.on { background:var(--card-2); color:var(--maize); border:1px solid var(--maize); }
     .team-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:12px 0 16px; }
     .team-actions button {
       background:var(--card-2); color:var(--text); border:1px solid var(--line);
@@ -310,12 +318,26 @@
           </div>
         </div>
         
+        <button id="addHomeBtn" type="button" style="margin-left:auto;background:var(--maize);color:var(--blue);border:0;border-radius:999px;padding:4px 10px;font-weight:800;cursor:pointer;font-size:.72rem">Add to Home Screen</button>
         <button id="acctBtn" style="margin-left:8px;background:var(--card-2);color:var(--maize);border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-weight:700;cursor:pointer;font-size:.75rem">Account</button>
       </div>
       <nav id="nav"></nav>
     </div>
   </header>
 
+  <div id="addHomeModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:80;padding:24px 16px;overflow:auto">
+    <div style="max-width:420px;margin:40px auto;background:#12233a;border:1px solid rgba(255,203,5,.3);border-radius:16px;padding:20px;color:#f4f1e8">
+      <div style="font-weight:800;font-size:1.2rem;margin-bottom:8px">Add Rim Runner to your Home Screen</div>
+      <p style="color:#c9d0da;line-height:1.45">iPhone won’t let a site install itself. Do this:</p>
+      <ol style="line-height:1.6;padding-left:20px">
+        <li>Tap the <b>Share</b> button at the bottom of Safari (the square with the arrow).</li>
+        <li>Scroll and tap <b>Add to Home Screen</b>.</li>
+        <li>Tap <b>Add</b>.</li>
+      </ol>
+      <p style="color:#c9d0da;font-size:.9rem">It shows up like an app. Open it from there instead of Safari.</p>
+      <button id="addHomeClose" class="follow-btn" type="button">Got it</button>
+    </div>
+  </div>
   <main class="wrap" id="app"></main>
   <footer style="opacity:.55;font-size:.75rem;padding:8px 0 24px">Unofficial. Not affiliated with MHSAA.</footer>
 
@@ -1557,6 +1579,7 @@ function initCloud() {
   firebase.initializeApp(FIREBASE_CONFIG);
   fbAuth = firebase.auth();
   fbDb = firebase.firestore();
+  fbAuth.onAuthStateChanged(u => { if (u) pullCloudFollows(); });
 }
 function authEmail(name) {
   return String(name || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, ".") + "@mittenratings.app";
@@ -1600,7 +1623,7 @@ async function pullCloudBoard() {
   } catch (e) {}
 }
 
-const PAGES = ["home", "rankings", "games", "big", "matchup", "picks", "teams", "how"];
+const PAGES = ["home", "followed", "rankings", "undefeated", "big", "matchup", "picks", "teams", "how"];
 let page = "home";
 let divFilter = "all";
 let teamQuery = "";
@@ -1616,6 +1639,15 @@ let profileName = null;
 let teamFocus = null;
 let selectedTeam = null;
 let gamesQuery = "";
+let undQuery = "";
+let followedIds = [];
+try {
+  const raw = localStorage.getItem("rrFollows") || localStorage.getItem("rrFollow") || "[]";
+  followedIds = raw.startsWith("[") ? JSON.parse(raw) : (raw ? [raw] : []);
+} catch (e) { followedIds = []; }
+followedIds = followedIds.filter(Boolean);
+let followerCounts = {};
+let followCountTried = {};
 let pendingPick = null;
 
 const SYSTEM = {
@@ -1630,7 +1662,7 @@ const SYSTEM = {
 
 
 const SEASON_START = "2026-11-01";
-const FADE_GAMES = 6;
+const FADE_GAMES = 12;
 function lockPriors() {
   DATA.teams.forEach(t => {
     if (t.lastYearRating == null) t.lastYearRating = t.rating;
@@ -1657,7 +1689,7 @@ function applySeasonFade() {
   DATA.teams.forEach(t => {
     t.formRating = form[t.id];
     t.yearGames = n[t.id] || 0;
-    const w = t.yearGames / (t.yearGames + FADE_GAMES);
+    const w = Math.min(1, t.yearGames / FADE_GAMES);
     t.rating = Math.round(w * t.formRating + (1 - w) * t.lastYearRating);
   });
 }
@@ -1960,6 +1992,7 @@ async function login(user, pass) {
       const display = (prof.exists && prof.data().name) || fbAuth.currentUser.displayName || name;
       writeLocalUser(display, pass);
       await pullCloudBoard();
+      await pullCloudFollows();
       return "";
     } catch (e) {
       const a = loadAuth();
@@ -2284,7 +2317,7 @@ function boardRows(scope) {
 }
 
 function renderNav() {
-  const labels = { home: "Home", rankings: "Rankings", games: "Upcoming", big: "Big games", matchup: "Matchup", picks: "Picks", teams: "Teams", how: "How" };
+  const labels = { home: "Home", followed: "Followed", rankings: "Rankings", undefeated: "Undefeated", big: "Big games", matchup: "Matchup", picks: "Picks", teams: "Teams", how: "How" };
   const ab = document.getElementById("acctBtn");
   if (ab) {
     const u = currentUser();
@@ -2310,7 +2343,7 @@ function gameRow(g, showStatus = true, withPicks = false, quietSpread = false) {
   const final = g.status === "final";
   const mid = final
     ? `<b>${g.awayScore} – ${g.homeScore}</b><em>${fmtDate(g.date)} · Final</em>`
-    : `<b>PRED ${gamePred(g).predAway}–${gamePred(g).predHome}</b><em>Predicted score · ${fmtDate(g.date)}</em>`;
+    : `<b>${gamePred(g).predAway}–${gamePred(g).predHome}</b><em>Predicted score · ${fmtDate(g.date)}</em>`;
   const badge = final
     ? `<div class="status final">Final</div>`
     : `<div class="status predicted">Predicted</div>${gamePred(g).rivalry ? `<div class="status predicted">Rivalry</div>` : ""}`;
@@ -2335,7 +2368,7 @@ function gameRow(g, showStatus = true, withPicks = false, quietSpread = false) {
       <div class="stat">
         <label>Over / under</label>
         <b>${p.ou}</b>
-        <small>Pred ${p.predAway}–${p.predHome}</small>
+        <small>Predicted score ${p.predAway}–${p.predHome}</small>
       </div>
       <div class="stat hot">
         <label>Big game</label>
@@ -2343,7 +2376,8 @@ function gameRow(g, showStatus = true, withPicks = false, quietSpread = false) {
         <small>${p.rivalry ? "Rivalry · quality + close" : "Quality + closeness"}</small>
       </div>
     </div>`;
-  if (!withPicks) return `<div class="game-block">${header}${boxes}</div>`;
+  const share = `<p style="margin:10px 0 0"><button class="back share-game" data-share-game="${g.id}" type="button">Share</button></p>`;
+  if (!withPicks) return `<div class="game-block">${header}${boxes}${share}</div>`;
   const mine = myPicks()[g.id];
   const c = coverText(g);
   const locked = picksLocked();
@@ -2384,7 +2418,7 @@ function weekGamesSection() {
   const list = topWeekGames().slice(0, 10);
   if (!list.length) return "";
   return `<section class="card" style="margin-bottom:14px">
-      <h3>Top 10 games of the week</h3><p style="margin:-4px 0 8px"><button class="back" data-page-jump="big" style="padding:0">See all big games →</button></p>
+      <h3>Top 12 games of the week</h3><p style="margin:-4px 0 8px"><button class="back" data-page-jump="big" style="padding:0">See all big games →</button></p>
       <p style="color:var(--muted);font-size:.85rem;margin-bottom:8px">Ranked by Big Game rating — how good the two teams are, then how close it should be.</p>
       ${list.map((x, i) => {
         const p = gamePred(x.g);
@@ -2504,10 +2538,207 @@ function teamLetters(t) { return teamAbbr(t); }
 function firstWeekGames() {
   return DATA.games.filter(g => g.date >= "2026-11-30" && g.date <= "2026-12-06" && g.status !== "final");
 }
+
+function saveFollows() {
+  localStorage.setItem("rrFollows", JSON.stringify(followedIds));
+}
+function isFollowed(id) { return followedIds.indexOf(id) >= 0; }
+async function pullCloudFollows() {
+  if (!fbAuth || !fbAuth.currentUser || !fbDb) return;
+  try {
+    const snap = await fbDb.collection("userFollows").doc(fbAuth.currentUser.uid).get();
+    if (snap.exists && Array.isArray(snap.data().teams)) {
+      followedIds = snap.data().teams.filter(Boolean);
+      saveFollows();
+    }
+  } catch (e) {}
+}
+async function pushCloudFollows() {
+  if (!fbAuth || !fbAuth.currentUser || !fbDb) return;
+  try {
+    await fbDb.collection("userFollows").doc(fbAuth.currentUser.uid).set({
+      teams: followedIds, updated: Date.now()
+    }, { merge: true });
+  } catch (e) {}
+}
+async function refreshFollowCount(id) {
+  if (!fbDb || !id) return;
+  try {
+    initCloud();
+    const snap = await fbDb.collection("teamFollows").doc(id).get();
+    followerCounts[id] = snap.exists ? Math.max(0, Number(snap.data().count || 0)) : 0;
+    followCountTried[id] = true;
+  } catch (e) {
+    followCountTried[id] = true;
+  }
+}
+function toggleFollow(id) {
+  if (!id) return;
+  if (!currentUser()) {
+    page = "account";
+    render();
+    return false;
+  }
+  const adding = !isFollowed(id);
+  if (adding) followedIds.push(id);
+  else followedIds = followedIds.filter(x => x !== id);
+  saveFollows();
+  followerCounts[id] = Math.max(0, (followerCounts[id] || 0) + (adding ? 1 : -1));
+  initCloud();
+  (async () => {
+    await pushCloudFollows();
+    if (fbDb && fbAuth && fbAuth.currentUser) {
+      try {
+        await fbDb.collection("teamFollows").doc(id).set({
+          count: firebase.firestore.FieldValue.increment(adding ? 1 : -1)
+        }, { merge: true });
+        await refreshFollowCount(id);
+      } catch (e) {}
+    }
+  })();
+  return true;
+}
+function followedTeams() {
+  return followedIds.map(teamById).filter(Boolean).sort((a,b) => b.rating - a.rating);
+}
+function followed() { return followedTeams()[0] || null; }
+function setFollow(id) { toggleFollow(id); }
+function nextGameFor(id) {
+  return DATA.games.filter(g => g.status !== "final" && (g.homeId === id || g.awayId === id))
+    .sort((a,b) => a.date.localeCompare(b.date))[0] || null;
+}
+function followBar() {
+  const list = followedTeams();
+  const rows = list.map(tm => {
+    const nxt = nextGameFor(tm.id);
+    const p = nxt ? gamePred(nxt) : null;
+    const opp = nxt ? ((nxt.homeId===tm.id?teamById(nxt.awayId):teamById(nxt.homeId))||{}) : {};
+    const where = nxt ? (nxt.homeId===tm.id?"vs":"@") : "";
+    return `<div style="padding:10px 0;border-top:1px solid var(--line)">
+      <div style="font-weight:800;cursor:pointer" data-team="${tm.id}">${tm.name}</div>
+      <div style="color:var(--muted);font-size:.82rem">#${statewideRank(tm.id)} · D${tm.division} · ${record(tm)}</div>
+      ${nxt ? `<div style="font-size:.88rem;margin-top:4px">${where} ${opp.name||""} · ${fmtDate(nxt.date)} · ${p.spreadLabel}</div>` : ""}
+    </div>`;
+  }).join("");
+  const logged = !!currentUser();
+  return `<section class="card" style="margin-bottom:14px">
+      <div style="font-weight:800;margin-bottom:8px">Followed teams</div>
+      ${logged ? `<div class="match-suggest">
+        <input id="followSearch" class="search" placeholder="Add a team" autocomplete="off" />
+        <div id="followList" class="suggest-list" style="display:none"></div>
+      </div>` : `<p style="color:var(--muted);font-size:.9rem">Log in to follow teams.</p><button class="follow-btn" data-page-jump="account">Log in</button>`}
+      ${list.length ? rows : (logged ? "<p style='color:var(--muted);font-size:.9rem'>No teams yet. Search to add your schools.</p>" : "")}
+    </section>`;
+}
+
+function siteOrigin() {
+  return (location.origin && location.origin !== "null") ? location.origin + location.pathname : "https://rimrunner.netlify.app/";
+}
+function shareMatchLink() {
+  return siteOrigin() + "?page=matchup&a=" + encodeURIComponent(matchA) + "&b=" + encodeURIComponent(matchB) + "&site=" + encodeURIComponent(matchSite);
+}
+function shareGameLink(id) {
+  return siteOrigin() + "?page=matchup&game=" + encodeURIComponent(id);
+}
+function sharePicksLink() {
+  return siteOrigin() + "?page=picks";
+}
+function applyShareQuery() {
+  const q = new URLSearchParams(location.search);
+  const pg = q.get("page");
+  if (pg) page = pg;
+  if (q.get("a") && teamById(q.get("a"))) matchA = q.get("a");
+  if (q.get("b") && teamById(q.get("b"))) matchB = q.get("b");
+  if (q.get("site")) matchSite = q.get("site");
+  const gid = q.get("game");
+  if (gid) {
+    const g = DATA.games.find(x => x.id === gid);
+    if (g) {
+      matchA = g.awayId;
+      matchB = g.homeId;
+      matchSite = "b";
+      page = "matchup";
+    }
+  }
+  if (q.get("team") && teamById(q.get("team"))) {
+    selectedTeam = q.get("team");
+    page = "teams";
+  }
+}
+function flashShare(msg) {
+  let el = document.getElementById("shareFlash");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "shareFlash";
+    el.style.cssText = "position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#ffcb05;color:#07111f;font-weight:800;padding:12px 16px;border-radius:999px;z-index:99;box-shadow:0 8px 24px rgba(0,0,0,.4)";
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.style.display = "block";
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.style.display = "none"; }, 2200);
+}
+async function shareText(title, text, url) {
+  const full = (text || title || "Rim Runner") + (url ? "\n" + url : "");
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: title || "Rim Runner", text: full });
+      flashShare("Shared");
+      return;
+    }
+  } catch (e) {}
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(full);
+      flashShare("Link copied");
+      return;
+    }
+  } catch (e) {}
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = full;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+    flashShare("Link copied");
+    return;
+  } catch (e) {}
+  prompt("Copy this link", full);
+}
+function shareGameById(id) {
+  const g = DATA.games.find(x => x.id === id);
+  if (!g) {
+    shareText("Rim Runner", "Michigan HS basketball", siteOrigin());
+    return;
+  }
+  const p = gamePred(g);
+  const home = teamById(g.homeId) || { name: "Home" };
+  const away = teamById(g.awayId) || { name: "Away" };
+  shareText("Rim Runner", p.spreadLabel + " · " + away.name + " at " + home.name + " · Predicted score " + p.predAway + "-" + p.predHome, shareGameLink(g.id));
+}
+function shareCurrentMatchup() {
+  const a = teamById(matchA), b = teamById(matchB);
+  if (!a || !b) return shareText("Rim Runner", "Matchup", shareMatchLink());
+  let home = a, away = b;
+  if (matchSite === "b") { home = b; away = a; }
+  const saved = SYSTEM.homeCourtPoints;
+  if (matchSite === "n") SYSTEM.homeCourtPoints = 0;
+  const p = gamePred({ homeId: home.id, awayId: away.id, date: "2026-12-01", status: "scheduled" });
+  SYSTEM.homeCourtPoints = saved;
+  shareText("Rim Runner", p.spreadLabel + " · " + away.name + " at " + home.name, shareMatchLink());
+}
+
+
+function followedPage() {
+  return `<section class="hero"><h2>Followed</h2></section>` + followBar();
+}
 function homePage() {
   const top = gameOfTheWeek() || topWeekGames()[0];
   if (!top) {
-    return `<section class="hero"><h2>Rim Runner</h2><p>No featured game this week.</p></section>`;
+    return followBar() + `<section class="hero"><h2>Rim Runner</h2><p>No featured game this week.</p></section>`;
   }
   const g = top.g;
   const home = teamById(g.homeId);
@@ -2515,7 +2746,7 @@ function homePage() {
   const p = gamePred(g);
   const c = coverText(g);
   const mine = (currentUser() && myPicks()[g.id]) || "";
-  return `<section class="card feat">
+  return followBar() + `<section class="card feat">
       <div class="feat-kicker">Game of the week · Opening week</div>
       <div class="feat-title">${p.rivalry ? "Rivalry night. Don’t miss it." : "The one everybody should watch."}</div>
       <div class="feat-vs">
@@ -2524,7 +2755,7 @@ function homePage() {
           <strong>${away.name}</strong>
           <span>${record(away)} · D${away.division}</span>
         </div>
-        <div class="feat-mid"><div class="vs">VS</div>AT HOME<b>${p.predAway}–${p.predHome}</b><span style="display:block;margin-top:6px;color:var(--maize)">${fmtDate(g.date)}</span></div>
+        <div class="feat-mid"><div class="vs">VS</div>AT HOME<span style="display:block;font-size:.68rem;letter-spacing:.12em;font-weight:800;color:var(--maize);margin:4px 0 2px">PREDICTED SCORE</span><b>${p.predAway}–${p.predHome}</b><span style="display:block;margin-top:6px;color:var(--muted);font-size:.8rem">${fmtDate(g.date)} · not final</span></div>
         <div class="feat-team">
           <div class="crest" style="background:${teamColors(home)[0]};color:${teamColors(home)[1]};border-color:${teamColors(home)[1]}">${teamAbbr(home)}</div>
           <strong>${home.name}</strong>
@@ -2561,7 +2792,7 @@ function homePage() {
         <div class="stat">
           <label>Over / under</label>
           <b>${p.ou}</b>
-          <small>Pred ${p.predAway}–${p.predHome}</small>
+          <small>Predicted score ${p.predAway}–${p.predHome}</small>
         </div>
         <div class="stat hot">
           <label>Big game</label>
@@ -2569,8 +2800,64 @@ function homePage() {
           <small>${p.rivalry ? "Rivalry" : "Quality + close"}</small>
         </div>
       </div>
-      <p style="margin-top:14px"><button class="back" data-page-jump="big" style="padding:0">See all big games →</button></p>
+      <p style="margin-top:14px"><button class="follow-btn" id="shareGotw" type="button">Share this game</button></p>
+      <p><button class="back" data-page-jump="big" style="padding:0">See all big games →</button></p>
     </section>`;
+}
+
+
+function lastYearWL(id) {
+  let w = 0, l = 0;
+  for (const g of lastYearGames(id)) {
+    if (g.mine > g.theirs) w++;
+    else if (g.mine < g.theirs) l++;
+  }
+  return { w, l };
+}
+function seasonWeekLabel() {
+  const open = new Date("2026-11-30T12:00:00-05:00");
+  const now = new Date();
+  if (now < open) return "Preseason";
+  const days = Math.floor((now - open) / 86400000);
+  const week = Math.min(20, Math.floor(days / 7) + 1);
+  return "Week " + week;
+}
+function undefeatedPage() {
+  const field = DATA.teams.length;
+  let now = ranked().filter(tm => tm.recordLosses === 0);
+  const uq = (undQuery || "").trim().toLowerCase();
+  const shown = uq ? now.filter(tm => tm.name.toLowerCase().includes(uq) || (tm.city||"").toLowerCase().includes(uq)) : now;
+  const last = ranked().map(tm => ({ tm, ly: lastYearWL(tm.id) })).filter(x => x.ly.w > 0 && x.ly.l === 0);
+  const pct = field ? Math.round((now.length / field) * 1000) / 10 : 0;
+  function block(list) {
+    if (!list.length) return "<p style='color:var(--muted)'>None left.</p>";
+    return `<div class="card table-wrap"><table>
+      <thead><tr><th>#</th><th>Team</th><th>Div</th><th>Rec</th><th>Elo</th></tr></thead>
+      <tbody>${list.map((row, i) => {
+        const tm = row.tm || row;
+        const rec = row.ly ? (row.ly.w + "-" + row.ly.l) : record(tm);
+        return `<tr data-team="${tm.id}" class="${isFollowed(tm.id)?"hl":""}" style="cursor:pointer">
+          <td class="rk">${i+1}</td>
+          <td class="sticky-name"><strong>${tm.name}</strong></td>
+          <td>${tm.division}</td>
+          <td>${rec}</td>
+          <td>${tm.rating}</td>
+        </tr>`;
+      }).join("")}</tbody></table></div>`;
+  }
+  return `<section class="card feat" style="margin-bottom:16px">
+      <div class="feat-kicker">${seasonWeekLabel()}</div>
+      <div class="feat-title" style="font-size:2rem">${now.length} still undefeated</div>
+      <p style="font-size:1.15rem;margin:0 0 14px;font-weight:700">${pct}% of the field. ${field - now.length ? (field - now.length) + " already have a loss." : "Nobody has lost yet."}</p>
+      <div class="stat-grid" style="text-align:left">
+        <div class="stat hot"><label>Unbeaten</label><b>${now.length}</b><small>out of ${field}</small></div>
+        <div class="stat hot"><label>Percent</label><b>${pct}%</b><small>still standing</small></div>
+        <div class="stat hot"><label>Week</label><b>${seasonWeekLabel()}</b><small>2026-27</small></div>
+        <div class="stat"><label>With a loss</label><b>${field - now.length}</b><small>off the board</small></div>
+      </div>
+    </section>
+    <input id="undSearch" class="search" placeholder="Search the undefeated list" value="${(undQuery||"").replace(/"/g,"&quot;")}" />
+    ${block(shown)}`;
 }
 
 function rankingsPage() {
@@ -2591,7 +2878,7 @@ function rankingsPage() {
       <table>
         <thead><tr><th>#</th><th>St</th><th>Div#</th><th>Team</th><th>Div</th><th>Rec</th><th>Elo</th><th>MPR</th><th>SOS</th><th>QW</th></tr></thead>
         <tbody>
-          ${rows.map((t, i) => `<tr data-team="${t.id}" class="${teamFocus===t.id?"hl":""}" style="cursor:pointer">
+          ${rows.map((t, i) => `<tr data-team="${t.id}" class="${(teamFocus===t.id||isFollowed(t.id))?"hl":""}" style="cursor:pointer">
             <td class="rk">${i + 1}</td>
             <td>${statewideRank(t.id)}</td>
             <td>${divisionRank(t.id)}</td>
@@ -2683,10 +2970,10 @@ function teamDetail(id) {
     <section class="hero">
       <h2>${t.name} ${t.mascot}</h2>
       <p><b>#${st} overall</b> · <b>#${dv} in Division ${t.division}</b> · ${record(t)} · Elo ${t.rating} · SOS ${t.sos ?? "—"} · QW ${t.qualityWins ?? 0}</p>
+      <p style="margin-top:8px;font-weight:800;color:var(--maize)">${followerCounts[t.id] != null ? followerCounts[t.id] : "—"} follower${followerCounts[t.id]===1?"":"s"}</p>
+      <button id="followThis" data-follow-id="${t.id}" class="follow-btn ${isFollowed(t.id)?"on":""}">${isFollowed(t.id)?"Following ✓":"Follow this team"}</button>
     </section>
-    ${sitStrip(id)}
     <div class="team-actions">
-      <button data-go="games">Upcoming games</button>
       <button data-go="rankings">Rankings</button>
       <button data-go="matchup">Matchup</button>
     </div>
@@ -2746,7 +3033,8 @@ function matchupPage() {
   const fake = { date: "2026-12-01", homeId: home.id, awayId: away.id, status: "scheduled", homeScore: null, awayScore: null };
   const block = gameRow(fake, true, false, true);
   SYSTEM.homeCourtPoints = saved;
-  return `<section class="hero"><h2>Matchup calculator</h2><p>Search two teams and pick a site. ${siteNote}.</p></section>
+  return `<section class="hero"><h2>Matchup calculator</h2><p>Search two teams and pick a site. ${siteNote}.</p>
+    <p><button class="follow-btn" id="shareMatchup" type="button">Share this matchup</button></p></section>
     <section class="card" style="margin-bottom:14px">
       <div class="match-box">
         <div class="match-suggest">
@@ -2870,6 +3158,7 @@ function picksPage() {
   const meAll = scorePlayer(mine, DATA.games);
   return `<section class="hero">
       <h2>Against the spread</h2>
+      <p><button class="follow-btn" id="sharePicks" type="button">Share this week’s picks</button></p>
       <p>Each week has 10 games. Pick <b>who covers the listed spread</b>, not just who wins. Each correct cover is 1 point. A push (lands exactly on the number) is no point. Not betting. No coins, no cash.</p>
       <p style="color:var(--maize);font-weight:700">${lockClockText()}</p>
       <p>Your week: <span class="record-pill">${meWeek.pts} pts · ${meWeek.w}–${meWeek.l}</span>
@@ -2901,7 +3190,7 @@ function picksPage() {
     <section class="card" style="margin-bottom:14px">
       <div id="openWeekGames" style="cursor:pointer">
         <h3>This week’s games ${showWeekGames ? "▲" : "▼"}</h3>
-        <p style="color:var(--muted);font-size:.9rem">${showWeekGames ? "Tap to hide the 10 games" : "Tap to show this week’s 10 games"}</p>
+        <p style="color:var(--muted);font-size:.9rem">${showWeekGames ? "Tap to hide the 10 games" : "Tap to show this week’s 12 games"}</p>
       </div>
       ${showWeekGames ? (slate.length ? slate.map((x,i) => `<div style="color:var(--maize);font-weight:800;font-size:.8rem;margin:10px 0 2px">#${i+1}</div>${gameRow(x.g, true, !picksLocked())}`).join("") : "<p style='color:var(--muted)'>No upcoming games to pick.</p>") : ""}
     </section>
@@ -2954,9 +3243,14 @@ function render() {
   renderNav();
   const app = document.getElementById("app");
   if (page === "home") app.innerHTML = homePage();
+  if (page === "followed") app.innerHTML = followedPage();
   if (page === "rankings") app.innerHTML = rankingsPage();
-  if (page === "games") app.innerHTML = gamesPage();
+  if (page === "undefeated") app.innerHTML = undefeatedPage();
   if (page === "teams") app.innerHTML = selectedTeam ? teamDetail(selectedTeam) : teamsListPage();
+  if (page === "teams" && selectedTeam && !followCountTried[selectedTeam]) {
+    followCountTried[selectedTeam] = true;
+    refreshFollowCount(selectedTeam).then(() => render());
+  }
   if (page === "big") app.innerHTML = bigGamesPage();
   if (page === "matchup") app.innerHTML = matchupPage();
   if (page === "picks") app.innerHTML = picksPage();
@@ -3084,6 +3378,20 @@ function render() {
       }
     };
   }
+  const uSearch = document.getElementById("undSearch");
+  if (uSearch) {
+    uSearch.oninput = e => {
+      const caret = e.target.selectionStart;
+      undQuery = e.target.value;
+      render();
+      const next = document.getElementById("undSearch");
+      if (next) {
+        next.focus();
+        const pos = Math.min(caret, next.value.length);
+        next.setSelectionRange(pos, pos);
+      }
+    };
+  }
   const gSearch = document.getElementById("gamesSearch");
   if (gSearch) {
     gSearch.oninput = e => {
@@ -3125,6 +3433,76 @@ function render() {
     rankIn.onfocus = paint;
     rankIn.onblur = () => setTimeout(() => { rankBox.style.display = "none"; }, 180);
   }
+
+  const unf = document.getElementById("unfollowBtn");
+  if (unf) unf.onclick = () => { setFollow(""); render(); };
+  const fol = document.getElementById("followThis");
+  if (fol) fol.onclick = () => {
+    const id = fol.dataset.followId || selectedTeam;
+    if (!id) return;
+    selectedTeam = id;
+    toggleFollow(id);
+    render();
+  };
+  const fin = document.getElementById("followSearch");
+  const fbox = document.getElementById("followList");
+  if (fin && fbox) {
+    const paint = () => {
+      const hits = filterTeams(fin.value);
+      fbox.innerHTML = hits.map(tm =>
+        `<div data-follow="${tm.id}">${tm.name} <span style="color:var(--muted)">D${tm.division}</span></div>`
+      ).join("") || `<div>No match</div>`;
+      fbox.style.display = "block";
+      fbox.querySelectorAll("[data-follow]").forEach(el => {
+        el.onmousedown = e => e.preventDefault();
+        el.onclick = () => { if (!isFollowed(el.dataset.follow)) toggleFollow(el.dataset.follow); render(); };
+      });
+    };
+    fin.oninput = paint;
+    fin.onfocus = paint;
+    fin.onblur = () => setTimeout(() => { fbox.style.display = "none"; }, 180);
+  }
+
+
+  const sp = document.getElementById("sharePicks");
+  if (sp) sp.onclick = () => shareText("Rim Runner Picks", "Make your 10 ATS picks", sharePicksLink());
+  const sm = document.getElementById("shareMatchup");
+  if (sm) sm.onclick = () => {
+    const a = teamById(matchA), b = teamById(matchB);
+    const home = matchSite === "b" ? b : a;
+    const away = matchSite === "b" ? a : b;
+    const fake = { date: "2026-12-01", homeId: home.id, awayId: away.id, status: "scheduled" };
+    if (matchSite === "n") {
+      const saved = SYSTEM.homeCourtPoints;
+      SYSTEM.homeCourtPoints = 0;
+      const p = gamePred({ homeId: home.id, awayId: away.id, date: "2026-12-01", status: "scheduled" });
+      SYSTEM.homeCourtPoints = saved;
+      shareText("Rim Runner", p.spreadLabel + " · " + away.name + " at " + home.name + " (neutral)", shareMatchLink());
+    } else {
+      const p = gamePred({ homeId: home.id, awayId: away.id, date: "2026-12-01", status: "scheduled" });
+      shareText("Rim Runner", p.spreadLabel + " · " + away.name + " at " + home.name, shareMatchLink());
+    }
+  };
+  const sg = document.getElementById("shareGotw");
+  if (sg) sg.onclick = () => {
+    const top = gameOfTheWeek() || (topWeekGames()[0] || {}).g;
+    const g = top && top.g ? top.g : top;
+    if (!g) return;
+    const p = gamePred(g);
+    const home = teamById(g.homeId), away = teamById(g.awayId);
+    shareText("Rim Runner Game of the Week", p.spreadLabel + " · " + away.name + " at " + home.name + " · Predicted score " + p.predAway + "-" + p.predHome, shareGameLink(g.id));
+  };
+  document.querySelectorAll("[data-share-game]").forEach(el => {
+    el.onclick = ev => {
+      ev.stopPropagation();
+      const g = DATA.games.find(x => x.id === el.dataset.shareGame);
+      if (!g) return;
+      const p = gamePred(g);
+      const home = teamById(g.homeId), away = teamById(g.awayId);
+      shareText("Rim Runner", p.spreadLabel + " · " + away.name + " at " + home.name, shareGameLink(g.id));
+    };
+  });
+
   wireMatchSearch("matchASearch", "matchAList", "a");
   wireMatchSearch("matchBSearch", "matchBList", "b");
   const ms = document.getElementById("matchSite");
@@ -3133,7 +3511,42 @@ function render() {
   if (back) back.onclick = () => { selectedTeam = null; render(); };
 }
 
+if (!window.rrShareBound) {
+  window.rrShareBound = true;
+  document.addEventListener("click", e => {
+    const btn = e.target.closest("#shareGotw, #shareMatchup, #sharePicks, [data-share-game]");
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      if (btn.id === "shareMatchup") shareCurrentMatchup();
+      else if (btn.id === "sharePicks") shareText("Rim Runner Picks", "Make your 10 ATS picks", sharePicksLink());
+      else if (btn.id === "shareGotw") {
+        const top = gameOfTheWeek() || topWeekGames()[0];
+        const g = top && top.g ? top.g : top;
+        if (g) shareGameById(g.id);
+      } else if (btn.dataset.shareGame) shareGameById(btn.dataset.shareGame);
+    } catch (err) {
+      flashShare("Could not share");
+    }
+  }, true);
+}
+if (!window.rrHomeBound) {
+  window.rrHomeBound = true;
+  const openHome = () => {
+    const m = document.getElementById("addHomeModal");
+    if (m) m.style.display = "block";
+  };
+  document.addEventListener("click", e => {
+    if (e.target.closest("#addHomeBtn")) { e.preventDefault(); openHome(); }
+    if (e.target.closest("#addHomeClose") || e.target.id === "addHomeModal") {
+      const m = document.getElementById("addHomeModal");
+      if (m) m.style.display = "none";
+    }
+  });
+}
 initCloud();
+applyShareQuery();
 loadLiveScores().finally(() => {
   applySeasonFade();
   if (cloudOn()) pullCloudBoard().finally(() => render());
