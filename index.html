@@ -153,11 +153,40 @@
       padding: 12px 0 14px;
       border-top: 1px solid rgba(255,255,255,0.06);
     }
+    .gotw-list { display: flex; flex-direction: column; gap: 12px; }
+    .gotw-card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px 14px 12px;
+    }
+    .gotw-rank {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 10px; padding-bottom: 8px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .gotw-rank b { color: var(--maize); font-size: 1.05rem; letter-spacing: .04em; }
+    .gotw-rank span { color: var(--muted); font-size: .78rem; font-weight: 700; }
+    .pick-feat {
+      background: linear-gradient(180deg, #12233a, #07111f);
+      border: 1px solid rgba(255,203,5,.28);
+      border-radius: 14px;
+      padding: 12px 12px 10px;
+    }
+    .pick-feat .feat-vs { margin: 6px 0 10px; }
+    .pick-feat .crest { width: 52px; height: 52px; font-size: .95rem; margin: 0 auto 6px; }
     .game-block:first-of-type { border-top: 0; }
     .game {
       display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center;
     }
     .team-mini { font-weight: 650; font-size: 0.92rem; }
+    .team-mini-wrap { display:flex; align-items:center; gap:8px; min-width:0; }
+    .team-mini-wrap.right { flex-direction:row-reverse; text-align:right; }
+    .crest-mini {
+      width:36px; height:36px; flex:0 0 36px; border-radius:9px;
+      display:grid; place-items:center; font-weight:800; font-size:.62rem; letter-spacing:.03em;
+      border:2px solid currentColor;
+    }
     .team-mini span { display: block; color: var(--muted); font-size: 0.72rem; font-weight: 500; }
     .team-mini .rec { display: inline; color: var(--maize); font-weight: 700; font-size: 0.82rem; }
     .team-mini.right { text-align: right; }
@@ -2317,7 +2346,7 @@ function boardRows(scope) {
 }
 
 function renderNav() {
-  const labels = { home: "Home", followed: "Followed", rankings: "Rankings", undefeated: "Undefeated", big: "Big games", matchup: "Matchup", picks: "Picks", teams: "Teams", how: "How" };
+  const labels = { home: "Home", followed: "Followed", rankings: "Rankings", undefeated: "Undefeated", big: "Games of the week", matchup: "Matchup", picks: "Picks", teams: "Teams", how: "How" };
   const ab = document.getElementById("acctBtn");
   if (ab) {
     const u = currentUser();
@@ -2347,10 +2376,11 @@ function gameRow(g, showStatus = true, withPicks = false, quietSpread = false) {
   const badge = final
     ? `<div class="status final">Final</div>`
     : `<div class="status predicted">Predicted</div>${gamePred(g).rivalry ? `<div class="status predicted">Rivalry</div>` : ""}`;
+  const ac = teamColors(away), hc = teamColors(home);
   const header = `<div class="game">
-    <div class="team-mini">${away.name} <span class="rec">(${record(away)})</span><span>${away.city} · D${away.division}</span></div>
+    <div class="team-mini-wrap"><div class="crest-mini" style="background:${ac[0]};color:${ac[1]};border-color:${ac[1]}">${teamAbbr(away)}</div><div class="team-mini">${away.name} <span class="rec">(${record(away)})</span><span>${away.city} · D${away.division}</span></div></div>
     <div class="scorebox">${mid}${badge}</div>
-    <div class="team-mini right">${home.name} <span class="rec">(${record(home)})</span><span>${home.city} · D${home.division} · HOME</span></div>
+    <div class="team-mini-wrap right"><div class="crest-mini" style="background:${hc[0]};color:${hc[1]};border-color:${hc[1]}">${teamAbbr(home)}</div><div class="team-mini right">${home.name} <span class="rec">(${record(home)})</span><span>${home.city} · D${home.division} · HOME</span></div></div>
   </div>`;
   if (final) return `<div class="game-block">${header}</div>`;
   const p = gamePred(g);
@@ -2418,99 +2448,757 @@ function weekGamesSection() {
   const list = topWeekGames().slice(0, 10);
   if (!list.length) return "";
   return `<section class="card" style="margin-bottom:14px">
-      <h3>Top 12 games of the week</h3><p style="margin:-4px 0 8px"><button class="back" data-page-jump="big" style="padding:0">See all big games →</button></p>
+      <h3>Games of the week</h3><p style="margin:-4px 0 8px"><button class="back" data-page-jump="big" style="padding:0">See all games of the week →</button></p>
       <p style="color:var(--muted);font-size:.85rem;margin-bottom:8px">Ranked by Big Game rating — how good the two teams are, then how close it should be.</p>
+      <div class="gotw-list">
       ${list.map((x, i) => {
         const p = gamePred(x.g);
-        return `<div class="game-block">
-          <div style="color:var(--maize);font-weight:800;font-size:.8rem;margin:8px 0 2px">#${i+1} · Big Game ${x.score.toFixed(1)}</div>
-          ${gameRow(x.g, false)}
-        </div>`;
+        return pickFeatCard(x.g, i, false).replace(
+          '<span>'+gamePred(x.g).spreadLabel+'</span>',
+          '<span>Big Game '+x.score.toFixed(1)+' · '+gamePred(x.g).spreadLabel+'</span>'
+        );
       }).join("")}
+      </div>
     </section>`;
 }
 
 
 function bigGamesPage() {
   const list = topWeekGames().slice(0, 10);
-  return `<section class="hero">
-      <h2>Big games</h2>
-      <p>The 10 biggest games this week, ranked by Big Game rating. That number mixes how good both teams are and how close the spread is.</p>
+  return `<section class="card feat" style="margin-bottom:16px">
+      <div class="feat-kicker">This week</div>
+      <div class="feat-title">Top 10 games of the week</div>
     </section>
-    <section class="card">
+    <section class="gotw-list">
       ${list.length ? list.map((x, i) => {
         const p = gamePred(x.g);
-        return `<div class="game-block" style="border-bottom:1px solid var(--line);padding:8px 0 14px">
-          <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:6px 0 4px">
-            <div style="color:var(--maize);font-weight:800">#${i+1}</div>
-            <div style="font-weight:800">Big Game ${x.score.toFixed(1)}</div>
-          </div>
-          ${gameRow(x.g, true)}
-        </div>`;
+        return pickFeatCard(x.g, i, false).replace(
+          '<span>'+gamePred(x.g).spreadLabel+'</span>',
+          '<span>Big Game '+x.score.toFixed(1)+' · '+gamePred(x.g).spreadLabel+'</span>'
+        );
       }).join("") : "<p style='color:var(--muted)'>No upcoming games to rank yet.</p>"}
     </section>`;
 }
 
 const SCHOOL_COLORS = {
-  "rockford": ["#002b5c", "#ffcb05"],
-  "grand-rapids-christian": ["#002868", "#c4a35a"],
-  "grand-rapids-catholic-central": ["#002868", "#c4a35a"],
+  "allen-park": ["#18453b", "#ffffff"],
+  "alpena": ["#1e4d2b", "#ffffff"],
+  "ann-arbor-huron": ["#1e4d2b", "#ffcb05"],
+  "ann-arbor-pioneer": ["#4b2e83", "#ffffff"],
+  "ann-arbor-skyline": ["#111111", "#ffffff"],
+  "auburn-hills-avondale": ["#4b2e83", "#ffcb05"],
+  "battle-creek-central": ["#0033a0", "#ffcb05"],
+  "battle-creek-lakeview": ["#4b2e83", "#ffffff"],
+  "bay-city-central": ["#4b2e83", "#ffcb05"],
+  "bay-city-western": ["#5c4033", "#ffcb05"],
+  "belleville": ["#e87722", "#111111"],
+  "berkley": ["#6b1d2a", "#0033a0"],
+  "birmingham-groves": ["#1e4d2b", "#ffffff"],
+  "birmingham-seaholm": ["#6b1d2a", "#ffffff"],
+  "bloomfield-hills": ["#111111", "#4b2e83"],
   "bloomfield-hills-brother-rice": ["#f26522", "#111111"],
-  "detroit-catholic-central": ["#002868", "#ffffff"],
-  "detroit-u-of-d-jesuit": ["#6b1d2a", "#f4f4f4"],
-  "east-grand-rapids": ["#0033a0", "#ffd100"],
-  "forest-hills-central": ["#18453b", "#c4a35a"],
-  "forest-hills-northern": ["#18453b", "#c4a35a"],
-  "hudsonville": ["#f15a22", "#002868"],
-  "holland-west-ottawa": ["#8b1e3f", "#c4a35a"],
-  "holland-christian": ["#8b1e3f", "#ffcb05"],
-  "okemos": ["#003366", "#ffcc00"],
-  "clarkston": ["#0033a0", "#ff6600"],
-  "brighton": ["#8b1e3f", "#c4a35a"],
-  "ann-arbor-pioneer": ["#6b1d2a", "#ffcb05"],
-  "ann-arbor-huron": ["#002868", "#c4a35a"],
-  "detroit-cass-tech": ["#0033a0", "#ffcb05"],
-  "saginaw-heritage": ["#0033a0", "#ff6600"],
-  "muskegon": ["#8b1e3f", "#ffcb05"],
-  "flint-carman-ainsworth": ["#0033a0", "#ffcb05"],
-  "belleville": ["#8b1e3f", "#c4a35a"],
-  "wayne-memorial": ["#0033a0", "#ffcb05"],
-  "lansing-everett": ["#8b1e3f", "#ffcb05"],
-  "traverse-city-west": ["#0033a0", "#ffcb05"],
-  "traverse-city-central": ["#8b1e3f", "#c4a35a"],
-  "midland": ["#0033a0", "#ffcb05"],
-  "midland-dow": ["#0033a0", "#ffffff"],
-  "portage-central": ["#0033a0", "#ffcb05"],
-  "portage-northern": ["#8b1e3f", "#c4a35a"],
-  "kalamazoo-central": ["#8b1e3f", "#ffcb05"],
-  "kalamazoo-loy-norrix": ["#0033a0", "#ffcb05"],
-  "grand-blanc": ["#8b1e3f", "#c4a35a"],
-  "davison": ["#0033a0", "#ffcb05"],
-  "howell": ["#0033a0", "#ff6600"],
-  "hartland": ["#8b1e3f", "#c4a35a"],
-  "south-lyon": ["#0033a0", "#ffcb05"],
-  "south-lyon-east": ["#0033a0", "#ffffff"],
-  "northville": ["#0033a0", "#c4a35a"],
-  "novi": ["#8b1e3f", "#ffcb05"],
-  "plymouth": ["#0033a0", "#ffcb05"],
-  "canton": ["#8b1e3f", "#c4a35a"],
-  "salem": ["#0033a0", "#ffcb05"],
-  "west-bloomfield": ["#0033a0", "#ffcb05"],
-  "rochester": ["#8b1e3f", "#c4a35a"],
-  "rochester-adams": ["#0033a0", "#ffcb05"],
-  "rochester-stoney-creek": ["#0033a0", "#ffffff"],
-  "troy": ["#0033a0", "#ffcb05"],
-  "troy-athens": ["#8b1e3f", "#c4a35a"],
-  "birmingham-seaholm": ["#0033a0", "#ffcb05"],
-  "birmingham-groves": ["#8b1e3f", "#c4a35a"],
-  "grose-pointe-south": ["#0033a0", "#ffcb05"],
+  "bloomfield-hills-cranbrook-kingswood": ["#0033a0", "#1e4d2b"],
+  "brighton": ["#e87722", "#111111"],
+  "brownstown-woodhaven": ["#4b2e83", "#ffffff"],
+  "byron-center": ["#e87722", "#111111"],
+  "cadillac": ["#0033a0", "#ffcb05"],
+  "caledonia": ["#4b2e83", "#ffcb05"],
+  "canton": ["#c8102e", "#ffffff"],
+  "cedar-springs": ["#c8102e", "#ffffff"],
+  "clarkston": ["#0033a0", "#ffcb05"],
+  "clinton-township-chippewa-valley": ["#c8102e", "#ffffff"],
+  "coldwater": ["#c8102e", "#ffffff"],
+  "coopersville": ["#1e4d2b", "#ffffff"],
+  "davison": ["#6b1d2a", "#ffcb05"],
+  "dearborn": ["#e87722", "#111111"],
+  "dearborn-edsel-ford": ["#111111", "#ffffff"],
+  "dearborn-fordson": ["#ffcb05", "#0033a0"],
+  "dearborn-heights-crestwood": ["#00205b", "#ffcb05"],
+  "detroit-cass-tech": ["#18453b", "#ffffff"],
+  "detroit-catholic-central": ["#0033a0", "#ffffff"],
+  "detroit-martin-luther-king": ["#111111", "#ffcb05"],
+  "detroit-mumford": ["#0033a0", "#6b1d2a"],
+  "detroit-renaissance": ["#6b1d2a", "#ffffff"],
+  "detroit-u-of-d-jesuit": ["#6b1d2a", "#ffffff"],
+  "detroit-western": ["#0033a0", "#ffcb05"],
+  "dewitt": ["#0033a0", "#ffcb05"],
+  "dexter": ["#6b1d2a", "#ffcb05"],
+  "east-grand-rapids": ["#0033a0", "#ffcb05"],
+  "east-kentwood": ["#c8102e", "#111111"],
+  "east-lansing": ["#0033a0", "#ffffff"],
+  "farmington": ["#0033a0", "#ffffff"],
+  "fenton": ["#e87722", "#111111"],
+  "flint-carman-ainsworth": ["#0033a0", "#6b7280"],
+  "flint-kearsley": ["#0033a0", "#ffcb05"],
+  "flushing": ["#e87722", "#111111"],
+  "fraser": ["#00205b", "#ffcb05"],
+  "garden-city": ["#0033a0", "#e87722"],
+  "gaylord": ["#0033a0", "#ffcb05"],
+  "gibraltar-carlson": ["#0033a0", "#ffffff"],
+  "grand-blanc": ["#c8102e", "#111111"],
+  "grand-haven": ["#0033a0", "#ffcb05"],
+  "grand-ledge": ["#0033a0", "#ffcb05"],
+  "grand-rapids-forest-hills-central": ["#18453b", "#ffffff"],
+  "grand-rapids-forest-hills-northern": ["#6ba3c7", "#111111"],
+  "grand-rapids-northview": ["#c8102e", "#ffffff"],
+  "grand-rapids-ottawa-hills": ["#e87722", "#111111"],
+  "grand-rapids-union": ["#c8102e", "#ffffff"],
+  "grandville": ["#6b1d2a", "#ffffff"],
+  "greenville": ["#4b2e83", "#ffcb05"],
+  "grosse-pointe-north": ["#1e4d2b", "#ffcb05"],
   "grosse-pointe-south": ["#0033a0", "#ffcb05"],
-  "grosse-pointe-north": ["#8b1e3f", "#c4a35a"],
-  "fruitport": ["#0033a0", "#ffcb05"],
-  "belding": ["#8b1e3f", "#ffcb05"],
-  "godwin-heights": ["#0033a0", "#ffcb05"],
-  "grand-rapids-northview": ["#0033a0", "#ffcb05"],
-  "concord": ["#8b1e3f", "#c4a35a"]
+  "hamtramck": ["#6b1d2a", "#ffffff"],
+  "harrison-township-l-anse-creuse": ["#0033a0", "#ffffff"],
+  "hartland": ["#0033a0", "#ffcb05"],
+  "holland": ["#c8102e", "#ffffff"],
+  "holland-west-ottawa": ["#111111", "#ffffff"],
+  "holly": ["#c8102e", "#ffffff"],
+  "holt": ["#5c4033", "#ffcb05"],
+  "howell": ["#1e4d2b", "#ffcb05"],
+  "hudsonville": ["#ffcb05", "#0033a0"],
+  "jackson": ["#e87722", "#111111"],
+  "jackson-northwest": ["#c8102e", "#111111"],
+  "jenison": ["#1e4d2b", "#ffffff"],
+  "kalamazoo-central": ["#6b1d2a", "#ffffff"],
+  "kalamazoo-loy-norrix": ["#00205b", "#ffffff"],
+  "lake-orion": ["#1e4d2b", "#ffffff"],
+  "lansing-eastern": ["#0033a0", "#ffcb05"],
+  "lansing-everett": ["#c8102e", "#0033a0"],
+  "lansing-waverly": ["#111111", "#ffcb05"],
+  "lapeer": ["#0033a0", "#1e4d2b"],
+  "lincoln-park": ["#0033a0", "#e87722"],
+  "livonia-churchill": ["#c8102e", "#111111"],
+  "livonia-franklin": ["#c8102e", "#0033a0"],
+  "livonia-stevenson": ["#0033a0", "#ffffff"],
+  "lowell": ["#c8102e", "#ffffff"],
+  "macomb-dakota": ["#1e4d2b", "#00205b"],
+  "macomb-l-anse-creuse-north": ["#111111", "#c5b358"],
+  "marquette": ["#c8102e", "#ffffff"],
+  "mason": ["#0033a0", "#c8102e"],
+  "mattawan": ["#0033a0", "#ffcb05"],
+  "melvindale": ["#c8102e", "#ffffff"],
+  "middleville-thornapple-kellogg": ["#e87722", "#111111"],
+  "midland": ["#0033a0", "#ffcb05"],
+  "midland-dow": ["#1e4d2b", "#ffcb05"],
+  "milford": ["#8b1e3f", "#ffffff"],
+  "monroe": ["#c8102e", "#ffffff"],
+  "mount-pleasant": ["#c8102e", "#111111"],
+  "muskegon": ["#8b1e3f", "#ffffff"],
+  "muskegon-mona-shores": ["#00205b", "#ffffff"],
+  "muskegon-reeths-puffer": ["#1e4d2b", "#ffffff"],
+  "new-baltimore-anchor-bay": ["#c8102e", "#ffffff"],
+  "new-boston-huron": ["#c8102e", "#ffffff"],
+  "north-farmington": ["#5c4033", "#ffcb05"],
+  "northville": ["#e87722", "#111111"],
+  "novi": ["#1e4d2b", "#ffffff"],
+  "oak-park": ["#c8102e", "#ffffff"],
+  "okemos": ["#6b1d2a", "#ffffff"],
+  "orchard-lake-st-mary-s": ["#c8102e", "#ffffff"],
+  "oxford": ["#00205b", "#ffcb05"],
+  "petoskey": ["#0033a0", "#ffffff"],
+  "plainwell": ["#0033a0", "#ffffff"],
+  "plymouth": ["#111111", "#c0c0c0"],
+  "port-huron": ["#c8102e", "#ffffff"],
+  "port-huron-northern": ["#0033a0", "#ffcb05"],
+  "portage-central": ["#0033a0", "#ffcb05"],
+  "portage-northern": ["#5c4033", "#ffffff"],
+  "redford-thurston": ["#00205b", "#ffffff"],
+  "richland-gull-lake": ["#00205b", "#ffffff"],
+  "river-rouge": ["#6b1d2a", "#ffffff"],
+  "riverview": ["#6b1d2a", "#ffcb05"],
+  "rochester": ["#0033a0", "#ffffff"],
+  "rochester-adams": ["#5c4033", "#ffcb05"],
+  "rochester-hills-stoney-creek": ["#00205b", "#c5b358"],
+  "rockford": ["#111111", "#e87722"],
+  "romeo": ["#c8102e", "#ffffff"],
+  "romulus": ["#6b1d2a", "#ffffff"],
+  "roseville": ["#c8102e", "#ffffff"],
+  "royal-oak": ["#111111", "#0033a0"],
+  "saginaw-heritage": ["#00205b", "#228b22"],
+  "saginaw-united": ["#111111", "#ffcb05"],
+  "salem": ["#0033a0", "#ffffff"],
+  "saline": ["#0033a0", "#ffcb05"],
+  "south-lyon": ["#0033a0", "#ffcb05"],
+  "south-lyon-east": ["#111111", "#c0c0c0"],
+  "southfield-arts-technology": ["#00205b", "#c8102e"],
+  "southgate-anderson": ["#6b1d2a", "#c0c0c0"],
+  "st-clair-shores-lake-shore": ["#c8102e", "#ffffff"],
+  "st-clair-shores-lakeview": ["#0033a0", "#c0c0c0"],
+  "st-joseph": ["#ffcb05", "#0033a0"],
+  "sterling-heights": ["#111111", "#ffcb05"],
+  "sterling-heights-stevenson": ["#00205b", "#ffffff"],
+  "stevensville-lakeshore": ["#c8102e", "#ffffff"],
+  "sturgis": ["#e87722", "#111111"],
+  "swartz-creek": ["#c8102e", "#ffffff"],
+  "taylor": ["#0033a0", "#ffffff"],
+  "temperance-bedford": ["#c8102e", "#6b7280"],
+  "traverse-city-central": ["#111111", "#ffcb05"],
+  "traverse-city-west": ["#18453b", "#c5b358"],
+  "trenton": ["#0033a0", "#ffcb05"],
+  "troy": ["#111111", "#c0c0c0"],
+  "troy-athens": ["#c8102e", "#ffcb05"],
+  "utica": ["#e87722", "#111111"],
+  "utica-eisenhower": ["#0033a0", "#c0c0c0"],
+  "utica-ford": ["#6b1d2a", "#ffffff"],
+  "walled-lake-central": ["#0033a0", "#ffcb05"],
+  "walled-lake-northern": ["#6b1d2a", "#c0c0c0"],
+  "walled-lake-western": ["#0033a0", "#c0c0c0"],
+  "warren-cousino": ["#c8102e", "#ffffff"],
+  "warren-de-la-salle-collegiate": ["#6b1d2a", "#c4a35a"],
+  "warren-fitzgerald": ["#0033a0", "#ffcb05"],
+  "warren-mott": ["#6b1d2a", "#ffffff"],
+  "warren-woods-tower": ["#0033a0", "#c0c0c0"],
+  "waterford-kettering": ["#18453b", "#ffffff"],
+  "waterford-mott": ["#6ba3c7", "#00205b"],
+  "wayne-memorial": ["#0033a0", "#ffcb05"],
+  "west-bloomfield": ["#18453b", "#ffffff"],
+  "westland-john-glenn": ["#c8102e", "#ffffff"],
+  "white-lake-lakeland": ["#c0c0c0", "#0033a0"],
+  "wyandotte-roosevelt": ["#0033a0", "#ffcb05"],
+  "wyoming": ["#111111", "#4b2e83"],
+  "ypsilanti-community": ["#111111", "#c5b358"],
+  "ypsilanti-lincoln": ["#0033a0", "#6b7280"],
+  "zeeland-east": ["#5c4033", "#ffcb05"],
+  "zeeland-west": ["#18453b", "#c5b358"],
+  "ada-forest-hills-eastern": ["#9b1b30", "#111111"],
+  "adrian": ["#0033a0", "#ffffff"],
+  "adrian-madison": ["#0033a0", "#ffcb05"],
+  "algonac": ["#0033a0", "#ffcb05"],
+  "allegan": ["#e87722", "#111111"],
+  "allendale": ["#c8102e", "#ffffff"],
+  "alma": ["#e87722", "#111111"],
+  "almont": ["#e87722", "#111111"],
+  "ann-arbor-father-gabriel-richard": ["#1e4d2b", "#ffffff"],
+  "ann-arbor-greenhills": ["#00205b", "#ffcb05"],
+  "armada": ["#e87722", "#111111"],
+  "battle-creek-harper-creek": ["#0033a0", "#ffffff"],
+  "battle-creek-pennfield": ["#1e4d2b", "#ffffff"],
+  "bay-city-john-glenn": ["#0033a0", "#ffffff"],
+  "belding": ["#e87722", "#111111"],
+  "benton-harbor": ["#e87722", "#111111"],
+  "berrien-springs": ["#1e4d2b", "#ffffff"],
+  "big-rapids": ["#c8102e", "#0033a0"],
+  "birch-run": ["#0033a0", "#ffcb05"],
+  "bridgeport": ["#c8102e", "#ffcb05"],
+  "brooklyn-columbia-central": ["#0033a0", "#ffcb05"],
+  "buchanan": ["#6b1d2a", "#ffffff"],
+  "canton-prep": ["#111111", "#c0c0c0"],
+  "carleton-airport": ["#00205b", "#ffcb05"],
+  "caro": ["#4b2e83", "#ffffff"],
+  "carrollton": ["#c8102e", "#111111"],
+  "center-line": ["#e87722", "#111111"],
+  "central-montcalm": ["#1e4d2b", "#ffffff"],
+  "charlotte": ["#e87722", "#111111"],
+  "cheboygan": ["#e87722", "#111111"],
+  "chelsea": ["#0033a0", "#ffcb05"],
+  "chesaning": ["#e87722", "#111111"],
+  "clare": ["#1e4d2b", "#ffffff"],
+  "clio": ["#e87722", "#111111"],
+  "comstock-park": ["#1e4d2b", "#ffcb05"],
+  "corunna": ["#111111", "#ffcb05"],
+  "croswell-lexington": ["#0033a0", "#ffffff"],
+  "dearborn-advanced-tech-academy": ["#0033a0", "#ffcb05"],
+  "dearborn-divine-child": ["#c8102e", "#6b7280"],
+  "dearborn-heights-annapolis": ["#0033a0", "#ffcb05"],
+  "dearborn-heights-robichaud": ["#c8102e", "#111111"],
+  "dearborn-heights-star-international": ["#00205b", "#ffcb05"],
+  "dearborn-henry-ford-academy": ["#0033a0", "#c0c0c0"],
+  "detroit-aztec-eagles-academy": ["#00205b", "#ffcb05"],
+  "detroit-central": ["#00205b", "#ffffff"],
+  "detroit-cody": ["#1e4d2b", "#6b7280"],
+  "detroit-country-day": ["#0033a0", "#ffcb05"],
+  "detroit-denby": ["#0033a0", "#ffcb05"],
+  "detroit-east-english": ["#ffcb05", "#0033a0"],
+  "detroit-edison": ["#c8102e", "#111111"],
+  "detroit-frontier-international": ["#00205b", "#ffcb05"],
+  "detroit-henry-ford": ["#5c4033", "#ffcb05"],
+  "detroit-jalen-rose-leadership-academy": ["#00205b", "#ffcb05"],
+  "detroit-lincoln-king": ["#111111", "#ffcb05"],
+  "detroit-old-redford": ["#c8102e", "#111111"],
+  "detroit-osborn": ["#c8102e", "#ffffff"],
+  "detroit-pershing": ["#0033a0", "#ffcb05"],
+  "detroit-southeastern": ["#4b2e83", "#ffffff"],
+  "detroit-university-prep": ["#111111", "#c8102e"],
+  "detroit-university-prep-art-design": ["#111111", "#c8102e"],
+  "detroit-university-prep-science-math": ["#0033a0", "#111111"],
+  "detroit-voyageur-college-prep": ["#00205b", "#ffcb05"],
+  "dowagiac": ["#e87722", "#111111"],
+  "dundee": ["#0033a0", "#ffffff"],
+  "eastpointe": ["#1e4d2b", "#ffffff"],
+  "eaton-rapids": ["#6b1d2a", "#ffffff"],
+  "edwardsburg": ["#e87722", "#0033a0"],
+  "escanaba": ["#e87722", "#111111"],
+  "essexville-garber": ["#111111", "#ffffff"],
+  "ferndale": ["#5c4033", "#ffffff"],
+  "ferndale-university": ["#ffcb05", "#111111"],
+  "flat-rock": ["#1e4d2b", "#ffcb05"],
+  "flint-hamady": ["#111111", "#ffffff"],
+  "flint-powers-catholic": ["#0033a0", "#e87722"],
+  "flint-southwestern": ["#0033a0", "#ffffff"],
+  "fowlerville": ["#4b2e83", "#ffcb05"],
+  "frankenmuth": ["#c8102e", "#6b7280"],
+  "freeland": ["#1e4d2b", "#ffffff"],
+  "fremont": ["#c8102e", "#ffffff"],
+  "fruitport": ["#00205b", "#ffffff"],
+  "gladstone": ["#4b2e83", "#ffffff"],
+  "gladwin": ["#0033a0", "#ffffff"],
+  "goodrich": ["#0033a0", "#ffcb05"],
+  "grand-rapids-catholic-central": ["#0033a0", "#ffffff"],
+  "grand-rapids-christian": ["#6ba3c7", "#111111"],
+  "grand-rapids-covenant-christian": ["#111111", "#ffcb05"],
+  "grand-rapids-kenowa-hills": ["#111111", "#ffcb05"],
+  "grand-rapids-northpointe-christian": ["#0033a0", "#ffffff"],
+  "grand-rapids-south-christian": ["#00205b", "#ffffff"],
+  "grand-rapids-west-catholic": ["#1e4d2b", "#ffffff"],
+  "grand-rapids-west-michigan-aviation-academy": ["#e87722", "#0033a0"],
+  "grant": ["#e87722", "#111111"],
+  "grayling": ["#1e4d2b", "#ffffff"],
+  "grosse-ile": ["#c8102e", "#6b7280"],
+  "hamilton": ["#111111", "#ffcb05"],
+  "hamtramck-oakland-international-academy": ["#00205b", "#ffcb05"],
+  "harper-woods": ["#6b1d2a", "#ffffff"],
+  "harper-woods-chandler-park": ["#00205b", "#ffffff"],
+  "hart": ["#c8102e", "#ffffff"],
+  "haslett": ["#0033a0", "#ffcb05"],
+  "hastings": ["#00205b", "#ffcb05"],
+  "hazel-park": ["#6b1d2a", "#6b7280"],
+  "holland-christian": ["#6b1d2a", "#ffffff"],
+  "hopkins": ["#0033a0", "#ffffff"],
+  "houghton": ["#e87722", "#111111"],
+  "howard-city-tri-county": ["#111111", "#ffcb05"],
+  "hudsonville-unity-christian": ["#00205b", "#ffffff"],
+  "ida": ["#0033a0", "#ffcb05"],
+  "imlay-city": ["#0033a0", "#ffcb05"],
+  "ionia": ["#0033a0", "#ffffff"],
+  "kalkaska": ["#0033a0", "#ffffff"],
+  "kentwood-grand-river-prep": ["#00205b", "#ffffff"],
+  "kingsford": ["#ffcb05", "#0033a0"],
+  "kingsley": ["#e87722", "#111111"],
+  "lake-fenton": ["#0033a0", "#ffffff"],
+  "lake-odessa-lakewood": ["#00205b", "#ffffff"],
+  "lansing-catholic": ["#111111", "#c0c0c0"],
+  "lansing-sexton": ["#c8102e", "#ffffff"],
+  "linden": ["#c8102e", "#111111"],
+  "livonia-clarenceville": ["#c8102e", "#6b7280"],
+  "ludington": ["#e87722", "#111111"],
+  "macomb-lutheran-north": ["#111111", "#ffcb05"],
+  "madison-heights-lamphere": ["#0033a0", "#ffffff"],
+  "manistee": ["#00205b", "#ffcb05"],
+  "marine-city": ["#e87722", "#111111"],
+  "marshall": ["#c8102e", "#111111"],
+  "marysville": ["#00205b", "#ffffff"],
+  "michigan-center": ["#c8102e", "#6b7280"],
+  "midland-bullock-creek": ["#111111", "#ffcb05"],
+  "milan": ["#c8102e", "#111111"],
+  "monroe-jefferson": ["#0033a0", "#ffcb05"],
+  "montague": ["#0033a0", "#ffffff"],
+  "mt-morris": ["#00205b", "#ffffff"],
+  "muskegon-oakridge": ["#0033a0", "#ffffff"],
+  "muskegon-orchard-view": ["#c8102e", "#6b7280"],
+  "negaunee": ["#ffcb05", "#0033a0"],
+  "newaygo": ["#111111", "#ffffff"],
+  "niles": ["#00205b", "#c5b358"],
+  "north-branch": ["#0033a0", "#ffffff"],
+  "ogemaw-heights": ["#5c4033", "#ffcb05"],
+  "olivet": ["#1e4d2b", "#ffffff"],
+  "ortonville-brandon": ["#0033a0", "#ffffff"],
+  "otsego": ["#00205b", "#c5b358"],
+  "owosso": ["#0033a0", "#ffcb05"],
+  "parchment": ["#6b1d2a", "#ffffff"],
+  "parma-western": ["#6b1d2a", "#ffffff"],
+  "paw-paw": ["#c8102e", "#ffffff"],
+  "pinckney": ["#c8102e", "#111111"],
+  "pontiac": ["#4b2e83", "#111111"],
+  "pontiac-notre-dame-prep": ["#18453b", "#c5b358"],
+  "portland": ["#8b1e3f", "#ffffff"],
+  "redford-union": ["#0033a0", "#ffcb05"],
+  "redford-westfield-prep": ["#00205b", "#ffcb05"],
+  "reed-city": ["#c8102e", "#111111"],
+  "remus-chippewa-hills": ["#0033a0", "#c8102e"],
+  "richmond": ["#00205b", "#ffffff"],
+  "romulus-summit-academy-north": ["#0d7377", "#111111"],
+  "saginaw-swan-valley": ["#4b2e83", "#ffffff"],
+  "sault-ste-marie": ["#00205b", "#ffffff"],
+  "shepherd": ["#0033a0", "#ffcb05"],
+  "south-haven": ["#4b2e83", "#ffcb05"],
+  "sparta": ["#0033a0", "#ffffff"],
+  "spring-lake": ["#c8102e", "#6b7280"],
+  "st-clair": ["#c8102e", "#0033a0"],
+  "st-clair-shores-south-lake": ["#0033a0", "#ffcb05"],
+  "st-johns": ["#c8102e", "#ffffff"],
+  "standish-sterling": ["#0033a0", "#ffffff"],
+  "tecumseh": ["#e87722", "#111111"],
+  "three-rivers": ["#4b2e83", "#ffffff"],
+  "vicksburg": ["#c8102e", "#ffffff"],
+  "warren-lincoln": ["#c8102e", "#111111"],
+  "warren-michigan-collegiate": ["#c8102e", "#111111"],
+  "wayland": ["#1e4d2b", "#ffffff"],
+  "whitehall": ["#c8102e", "#ffffff"],
+  "williamston": ["#1e4d2b", "#ffffff"],
+  "wyoming-godwin-heights": ["#00205b", "#ffcb05"],
+  "wyoming-kelloggsville": ["#e87722", "#0033a0"],
+  "wyoming-lee": ["#00205b", "#c5b358"],
+  "yale": ["#00205b", "#ffffff"],
+  "addison": ["#111111", "#c8102e"],
+  "alcona": ["#0033a0", "#ffcb05"],
+  "allen-park-cabrini": ["#0033a0", "#ffcb05"],
+  "arts-technology-academy-of-pontiac": ["#00205b", "#ffcb05"],
+  "auburn-hills-oakland-christian": ["#18453b", "#c5b358"],
+  "bad-axe": ["#0033a0", "#ffcb05"],
+  "bangor": ["#c8102e", "#ffffff"],
+  "bark-river-harris": ["#00205b", "#ffcb05"],
+  "bath": ["#0033a0", "#ffffff"],
+  "bay-city-all-saints": ["#111111", "#ffffff"],
+  "beal-city": ["#0033a0", "#ffffff"],
+  "beaverton": ["#c8102e", "#ffffff"],
+  "benzie-central": ["#c8102e", "#ffffff"],
+  "blanchard-montabella": ["#00205b", "#ffffff"],
+  "blissfield": ["#4b2e83", "#ffcb05"],
+  "bloomingdale": ["#c8102e", "#ffffff"],
+  "boyne-city": ["#c8102e", "#00205b"],
+  "breckenridge": ["#0033a0", "#ffcb05"],
+  "bridgman": ["#e87722", "#00205b"],
+  "brighton-charyl-stockwell-prep": ["#00205b", "#ffcb05"],
+  "bronson": ["#4b2e83", "#ffcb05"],
+  "brown-city": ["#1e4d2b", "#ffffff"],
+  "burton-atherton": ["#111111", "#ffffff"],
+  "burton-bendle": ["#0033a0", "#ffcb05"],
+  "burton-bentley": ["#c8102e", "#ffffff"],
+  "byron": ["#4b2e83", "#ffcb05"],
+  "calumet": ["#0033a0", "#6b7280"],
+  "capac": ["#ffcb05", "#0033a0"],
+  "carson-city-crystal": ["#0033a0", "#ffcb05"],
+  "cass-city": ["#6b1d2a", "#ffffff"],
+  "cassopolis": ["#0033a0", "#ffffff"],
+  "center-line-prep-academy": ["#00205b", "#ffcb05"],
+  "centreville": ["#0033a0", "#ffcb05"],
+  "charlevoix": ["#6b1d2a", "#ffffff"],
+  "clawson": ["#0033a0", "#ffcb05"],
+  "clinton": ["#c8102e", "#111111"],
+  "clinton-township-clintondale": ["#0033a0", "#ffcb05"],
+  "coloma": ["#18453b", "#ffcb05"],
+  "comstock": ["#111111", "#ffffff"],
+  "constantine": ["#c8102e", "#ffffff"],
+  "dansville": ["#111111", "#ffffff"],
+  "dearborn-riverside-academy-west": ["#111111", "#c0c0c0"],
+  "decatur": ["#5c4033", "#ffcb05"],
+  "delton-kellogg": ["#6b1d2a", "#ffffff"],
+  "detroit-academy-of-the-americas": ["#00205b", "#ffcb05"],
+  "detroit-communication-media-arts": ["#4b2e83", "#111111"],
+  "detroit-community": ["#111111", "#c8102e"],
+  "detroit-cristo-rey": ["#1e4d2b", "#c5b358"],
+  "detroit-leadership-academy": ["#c8102e", "#111111"],
+  "detroit-loyola": ["#0033a0", "#ffffff"],
+  "detroit-northwestern": ["#c8102e", "#ffffff"],
+  "detroit-universal-academy": ["#0033a0", "#ffd100"],
+  "durand": ["#0033a0", "#ffffff"],
+  "east-jackson": ["#0033a0", "#ffffff"],
+  "east-jordan": ["#c8102e", "#111111"],
+  "ecorse": ["#c8102e", "#ffffff"],
+  "elk-rapids": ["#e87722", "#111111"],
+  "elkton-pigeon-bay-port-laker": ["#1e4d2b", "#ffffff"],
+  "erie-mason": ["#0033a0", "#ffcb05"],
+  "evart": ["#0033a0", "#ffcb05"],
+  "farwell": ["#4b2e83", "#ffcb05"],
+  "fennville": ["#111111", "#e87722"],
+  "flint-new-standard-academy": ["#0033a0", "#ffcb05"],
+  "galesburg-augusta": ["#8b1e3f", "#ffcb05"],
+  "genesee": ["#1e4d2b", "#ffffff"],
+  "gobles": ["#0033a0", "#e87722"],
+  "grand-rapids-wellspring-prep": ["#6b1d2a", "#6b7280"],
+  "grand-traverse-academy": ["#00205b", "#ffffff"],
+  "grandville-calvin-christian": ["#1e4d2b", "#ffcb05"],
+  "grass-lake": ["#00205b", "#ffffff"],
+  "grosse-pointe-woods-university-liggett": ["#c8102e", "#00205b"],
+  "gwinn": ["#111111", "#ffcb05"],
+  "hancock": ["#9b1b30", "#ffcb05"],
+  "hanover-horton": ["#c8102e", "#ffffff"],
+  "harbor-beach": ["#e87722", "#111111"],
+  "harbor-springs": ["#e87722", "#111111"],
+  "harrison": ["#0033a0", "#ffcb05"],
+  "hartford": ["#1e4d2b", "#ffffff"],
+  "hemlock": ["#0033a0", "#ffffff"],
+  "hesperia": ["#1e4d2b", "#ffffff"],
+  "hillsdale": ["#ffcb05", "#0033a0"],
+  "holland-black-river": ["#111111", "#355e3b"],
+  "holton": ["#c8102e", "#ffffff"],
+  "homer": ["#e87722", "#111111"],
+  "hope-of-detroit-academy": ["#0033a0", "#ffcb05"],
+  "houghton-lake": ["#1e4d2b", "#ffffff"],
+  "hudson": ["#e87722", "#111111"],
+  "indian-river-inland-lakes": ["#0033a0", "#ffffff"],
+  "international-academy-of-flint": ["#00205b", "#ffcb05"],
+  "iron-mountain": ["#111111", "#ffcb05"],
+  "ironwood": ["#c8102e", "#ffffff"],
+  "ishpeming": ["#0033a0", "#ffffff"],
+  "ishpeming-westwood": ["#c8102e", "#ffffff"],
+  "ithaca": ["#0033a0", "#ffcb05"],
+  "jackson-lumen-christi": ["#1e4d2b", "#ffcb05"],
+  "johannesburg-lewiston": ["#c8102e", "#ffffff"],
+  "jonesville": ["#e87722", "#111111"],
+  "kalamazoo-christian": ["#4b2e83", "#ffcb05"],
+  "kalamazoo-hackett-catholic-prep": ["#1e4d2b", "#ffffff"],
+  "kalamazoo-phoenix": ["#18453b", "#ffffff"],
+  "kent-city": ["#c8102e", "#ffffff"],
+  "kimball-landmark-academy": ["#0033a0", "#ffffff"],
+  "laingsburg": ["#c8102e", "#ffffff"],
+  "lake-city": ["#c8102e", "#111111"],
+  "lakeview": ["#0033a0", "#ffcb05"],
+  "lawton": ["#0033a0", "#ffcb05"],
+  "leroy-pine-river": ["#1e4d2b", "#ffffff"],
+  "leslie": ["#e87722", "#111111"],
+  "madison-heights-bishop-foley": ["#111111", "#ffcb05"],
+  "madison-heights-madison": ["#4b2e83", "#ffcb05"],
+  "mancelona": ["#e87722", "#111111"],
+  "manchester": ["#6b1d2a", "#ffcb05"],
+  "manistique": ["#1e4d2b", "#ffffff"],
+  "manton": ["#e87722", "#111111"],
+  "maple-city-glen-lake": ["#111111", "#ffffff"],
+  "marlette": ["#c8102e", "#ffffff"],
+  "mason-county-central": ["#0033a0", "#ffcb05"],
+  "mcbain": ["#1e4d2b", "#ffcb05"],
+  "memphis": ["#0033a0", "#ffcb05"],
+  "menominee": ["#6b1d2a", "#ffffff"],
+  "millington": ["#c8102e", "#ffffff"],
+  "monroe-st-mary-catholic-central": ["#1e4d2b", "#ffcb05"],
+  "montrose": ["#c8102e", "#111111"],
+  "morley-stanwood": ["#0033a0", "#ffcb05"],
+  "mount-clemens": ["#00205b", "#ffcb05"],
+  "muskegon-western-michigan-christian": ["#18453b", "#ffffff"],
+  "napoleon": ["#1e4d2b", "#ffffff"],
+  "new-haven": ["#1e4d2b", "#ffffff"],
+  "new-lothrop": ["#111111", "#ffffff"],
+  "niles-brandywine": ["#6b1d2a", "#ffcb05"],
+  "north-muskegon": ["#0033a0", "#ffcb05"],
+  "onsted": ["#4b2e83", "#ffcb05"],
+  "oscoda": ["#0033a0", "#ffffff"],
+  "otisville-lakeville-memorial": ["#111111", "#ffcb05"],
+  "ottawa-lake-whiteford": ["#0033a0", "#ffcb05"],
+  "ovid-elsie": ["#0033a0", "#ffcb05"],
+  "painesdale-jeffers": ["#1e4d2b", "#ffffff"],
+  "perry": ["#c8102e", "#ffffff"],
+  "pewamo-westphalia": ["#0033a0", "#ffcb05"],
+  "pinconning": ["#1e4d2b", "#ffffff"],
+  "plymouth-christian-academy": ["#4b2e83", "#ffcb05"],
+  "potterville": ["#6b1d2a", "#ffcb05"],
+  "quincy": ["#111111", "#e87722"],
+  "ravenna": ["#0033a0", "#ffffff"],
+  "reese": ["#6b1d2a", "#ffcb05"],
+  "riverview-gabriel-richard": ["#6b1d2a", "#ffffff"],
+  "rochester-hills-lutheran-northwest": ["#c8102e", "#ffffff"],
+  "roscommon": ["#0033a0", "#ffcb05"],
+  "royal-oak-shrine-catholic": ["#0033a0", "#ffcb05"],
+  "saginaw-arts-sciences-academy": ["#6b1d2a", "#00205b"],
+  "saginaw-michigan-lutheran-seminary": ["#c8102e", "#ffffff"],
+  "saginaw-valley-lutheran": ["#0033a0", "#ffcb05"],
+  "sand-creek": ["#1e4d2b", "#ffffff"],
+  "sandusky": ["#c8102e", "#111111"],
+  "sanford-meridian": ["#00205b", "#ffcb05"],
+  "saranac": ["#c8102e", "#ffffff"],
+  "saugatuck": ["#e87722", "#0033a0"],
+  "schoolcraft": ["#4b2e83", "#ffcb05"],
+  "shelby": ["#4b2e83", "#ffffff"],
+  "springport": ["#0033a0", "#ffffff"],
+  "st-charles": ["#c8102e", "#111111"],
+  "st-helen-charlton-heston-academy": ["#c8102e", "#ffffff"],
+  "st-louis": ["#c8102e", "#111111"],
+  "stockbridge": ["#e87722", "#111111"],
+  "tawas": ["#c8102e", "#ffffff"],
+  "taylor-prep": ["#e87722", "#111111"],
+  "traverse-city-st-francis": ["#0033a0", "#ffcb05"],
+  "union-city": ["#6b1d2a", "#6b7280"],
+  "unionville-sebewaing": ["#c8102e", "#ffffff"],
+  "vassar": ["#e87722", "#111111"],
+  "vermontville-maple-valley": ["#0033a0", "#ffffff"],
+  "waterford-oakside-prep": ["#00205b", "#ffcb05"],
+  "watervliet": ["#6b1d2a", "#ffffff"],
+  "west-iron-county": ["#0033a0", "#ffffff"],
+  "westland-universal-learning-academy": ["#0033a0", "#ffcb05"],
+  "white-cloud": ["#e87722", "#111111"],
+  "white-pigeon": ["#c8102e", "#111111"],
+  "wyoming-potter-s-house-christian": ["#00205b", "#ffffff"],
+  "ypsilanti-arbor-prep": ["#1e4d2b", "#ffffff"],
+  "adrian-lenawee-christian": ["#0033a0", "#c8102e"],
+  "akron-fairgrove": ["#228b22", "#ffffff"],
+  "alanson": ["#0033a0", "#ffcb05"],
+  "alba": ["#c8102e", "#ffffff"],
+  "allen-park-inter-city-baptist": ["#4b2e83", "#ffcb05"],
+  "ann-arbor-central-academy": ["#0033a0", "#ffffff"],
+  "ann-arbor-christian-school": ["#00205b", "#ffcb05"],
+  "ann-arbor-michigan-islamic-academy": ["#00205b", "#ffcb05"],
+  "ann-arbor-rudolf-steiner": ["#00205b", "#ffffff"],
+  "ashley": ["#0033a0", "#ffcb05"],
+  "athens": ["#4b2e83", "#ffffff"],
+  "atlanta": ["#1e4d2b", "#ffffff"],
+  "au-gres-sims": ["#00205b", "#ffcb05"],
+  "auburn-hills-christian": ["#6b1d2a", "#6b7280"],
+  "baldwin": ["#0033a0", "#ffcb05"],
+  "baraga": ["#4b2e83", "#ffcb05"],
+  "battle-creek-calhoun-christian": ["#00205b", "#e87722"],
+  "battle-creek-st-philip": ["#c8102e", "#ffffff"],
+  "bear-lake": ["#c8102e", "#ffffff"],
+  "bellaire": ["#c8102e", "#111111"],
+  "bellevue": ["#c8102e", "#ffffff"],
+  "benton-harbor-countryside-academy": ["#0033a0", "#ffffff"],
+  "bessemer": ["#00205b", "#ffcb05"],
+  "big-rapids-crossroads-academy": ["#c8102e", "#ffffff"],
+  "bloomfield-hills-roeper": ["#c8102e", "#ffffff"],
+  "boyne-falls": ["#1e4d2b", "#ffffff"],
+  "brethren": ["#6ba3c7", "#00205b"],
+  "brighton-livingston-christian": ["#00205b", "#ffcb05"],
+  "brimley": ["#0033a0", "#ffffff"],
+  "britton-deerfield": ["#c8102e", "#ffffff"],
+  "buckley": ["#0047ab", "#ffcb05"],
+  "burr-oak": ["#0033a0", "#ffffff"],
+  "burt-lake-northern-michigan-christian": ["#0033a0", "#ffffff"],
+  "burton-centerpoint-christian": ["#00205b", "#ffcb05"],
+  "burton-st-thomas-more-academy": ["#00205b", "#ffffff"],
+  "byron-center-zion-christian": ["#0033a0", "#6b7280"],
+  "camden-frontier": ["#c8102e", "#ffffff"],
+  "carney-nadeau": ["#1e4d2b", "#ffcb05"],
+  "carsonville-port-sanilac": ["#0033a0", "#ffcb05"],
+  "caseville": ["#c8102e", "#ffffff"],
+  "cedarville": ["#1e4d2b", "#ffffff"],
+  "central-lake": ["#0033a0", "#e87722"],
+  "chassell": ["#0033a0", "#ffcb05"],
+  "chesterfield-austin-catholic": ["#00205b", "#ffcb05"],
+  "clarkston-everest-collegiate": ["#111111", "#ffcb05"],
+  "climax-scotts": ["#0033a0", "#ffcb05"],
+  "coldwater-pansophia-academy": ["#1e4d2b", "#ffffff"],
+  "coleman": ["#0033a0", "#ffffff"],
+  "colon": ["#c8102e", "#ffffff"],
+  "concord": ["#4b2e83", "#ffcb05"],
+  "cooks-big-bay-de-noc": ["#111111", "#ffffff"],
+  "covert": ["#00205b", "#ffcb05"],
+  "crystal-falls-forest-park": ["#c8102e", "#111111"],
+  "deckerville": ["#6b1d2a", "#ffcb05"],
+  "detroit-crockett-midtown-science-medicine": ["#00205b", "#ffcb05"],
+  "detroit-davis-aerospace": ["#6b1d2a", "#ffcb05"],
+  "detroit-douglass": ["#e87722", "#1e4d2b"],
+  "detroit-public-safety-academy": ["#c8102e", "#ffffff"],
+  "dollar-bay": ["#0033a0", "#ffffff"],
+  "dryden": ["#c8102e", "#111111"],
+  "eau-claire": ["#6b1d2a", "#ffffff"],
+  "eben-junction-superior-central": ["#0033a0", "#c0c0c0"],
+  "ellsworth": ["#111111", "#ffffff"],
+  "engadine": ["#1e4d2b", "#ffcb05"],
+  "ewen-trout-creek": ["#111111", "#ffffff"],
+  "fairview": ["#6b1d2a", "#ffcb05"],
+  "farmington-hills-huda-upper-school": ["#00205b", "#ffcb05"],
+  "felch-north-dickinson": ["#6b1d2a", "#ffffff"],
+  "fife-lake-forest-area": ["#18453b", "#ffcb05"],
+  "flint-beecher": ["#c8102e", "#ffffff"],
+  "flint-michigan-school-for-the-deaf": ["#00205b", "#ffffff"],
+  "fowler": ["#0033a0", "#ffffff"],
+  "frankfort": ["#4b2e83", "#ffcb05"],
+  "fulton": ["#0033a0", "#ffcb05"],
+  "gaylord-st-mary": ["#0033a0", "#ffffff"],
+  "genesee-christian": ["#0033a0", "#ffffff"],
+  "grand-rapids-sacred-heart": ["#00205b", "#ffcb05"],
+  "hale": ["#00205b", "#ffffff"],
+  "hannahville-nah-tah-wahsh": ["#1e4d2b", "#ffcb05"],
+  "harbor-springs-harbor-light-christian": ["#6b1d2a", "#6b7280"],
+  "hillman": ["#e87722", "#111111"],
+  "hillsdale-academy": ["#00205b", "#ffffff"],
+  "hillsdale-will-carleton-academy": ["#1e4d2b", "#ffffff"],
+  "holland-calvary": ["#1e4d2b", "#ffffff"],
+  "hudsonville-libertas-christian": ["#6b1d2a", "#ffffff"],
+  "inkster-american-international-academy": ["#c8102e", "#111111"],
+  "jackson-christian": ["#4b2e83", "#ffffff"],
+  "jackson-prep": ["#e87722", "#111111"],
+  "kimball-new-life-christian": ["#c8102e", "#ffffff"],
+  "kinde-north-huron": ["#0033a0", "#ffcb05"],
+  "kingston": ["#c8102e", "#111111"],
+  "kinross-maplewood-baptist": ["#18453b", "#c0c0c0"],
+  "l-anse": ["#4b2e83", "#ffffff"],
+  "lake-leelanau-st-mary": ["#0033a0", "#ffffff"],
+  "lake-linden-hubbell": ["#00205b", "#ffcb05"],
+  "lansing-christian": ["#111111", "#ffcb05"],
+  "lawrence": ["#4b2e83", "#ffffff"],
+  "leland": ["#4b2e83", "#ffcb05"],
+  "litchfield": ["#c8102e", "#ffffff"],
+  "lutheran-westland": ["#111111", "#ffffff"],
+  "mackinac-island": ["#0033a0", "#ffffff"],
+  "mackinaw-city": ["#0033a0", "#ffffff"],
+  "marcellus": ["#e87722", "#111111"],
+  "marcellus-howardsville-christian": ["#c8102e", "#ffffff"],
+  "marine-city-cardinal-mooney": ["#c8102e", "#ffffff"],
+  "marion": ["#6b1d2a", "#ffffff"],
+  "marshall-academy": ["#0033a0", "#ffd100"],
+  "martin": ["#6b1d2a", "#ffffff"],
+  "mason-county-eastern": ["#c8102e", "#ffcb05"],
+  "mayville": ["#6b1d2a", "#ffffff"],
+  "mcbain-northern-michigan-christian": ["#6b1d2a", "#ffffff"],
+  "melvindale-academy-for-business-tech": ["#0033a0", "#ffcb05"],
+  "mendon": ["#1e4d2b", "#ffffff"],
+  "merrill": ["#e87722", "#111111"],
+  "mesick": ["#e87722", "#111111"],
+  "midland-calvary-baptist": ["#00205b", "#ffcb05"],
+  "mio": ["#0033a0", "#ffcb05"],
+  "morenci": ["#6b1d2a", "#ffffff"],
+  "morrice": ["#e87722", "#111111"],
+  "mount-pleasant-sacred-heart": ["#c8102e", "#1e4d2b"],
+  "munising": ["#e87722", "#111111"],
+  "muskegon-catholic-central": ["#1e4d2b", "#ffcb05"],
+  "muskegon-heights-academy": ["#e87722", "#111111"],
+  "new-buffalo": ["#0033a0", "#ffcb05"],
+  "new-haven-merritt-academy": ["#0033a0", "#ffffff"],
+  "newberry": ["#e87722", "#111111"],
+  "north-adams-jerome": ["#1e4d2b", "#ffffff"],
+  "norway": ["#00205b", "#ffffff"],
+  "novi-christian-academy": ["#00205b", "#ffcb05"],
+  "onaway": ["#c8102e", "#ffffff"],
+  "onekama": ["#0033a0", "#c5b358"],
+  "ontonagon": ["#6b1d2a", "#ffffff"],
+  "peck": ["#c8102e", "#ffffff"],
+  "pellston": ["#5c4033", "#ffcb05"],
+  "pentwater": ["#4b2e83", "#ffcb05"],
+  "petersburg-summerfield": ["#111111", "#e87722"],
+  "petoskey-st-michael": ["#0033a0", "#ffffff"],
+  "pickford": ["#4b2e83", "#ffffff"],
+  "pittsford": ["#0033a0", "#ffffff"],
+  "plymouth-ivywood-classical-academy": ["#00205b", "#ffcb05"],
+  "pontiac-academy-for-excellence": ["#6b1d2a", "#ffcb05"],
+  "portland-st-patrick": ["#1e4d2b", "#ffffff"],
+  "posen": ["#c8102e", "#ffffff"],
+  "powers-north-central": ["#c8102e", "#111111"],
+  "rapid-river": ["#4b2e83", "#ffcb05"],
+  "reading": ["#c8102e", "#ffcb05"],
+  "rock-mid-peninsula": ["#e87722", "#ffffff"],
+  "rogers-city": ["#e87722", "#111111"],
+  "rudyard": ["#e87722", "#111111"],
+  "saginaw-nouvel-catholic-central": ["#0033a0", "#ffcb05"],
+  "southfield-bradford-academy": ["#c8102e", "#ffffff"],
+  "southfield-christian": ["#0033a0", "#ffcb05"],
+  "southfield-manoogian": ["#00205b", "#ffcb05"],
+  "st-ignace": ["#111111", "#ffcb05"],
+  "st-joseph-michigan-lutheran": ["#4b2e83", "#ffffff"],
+  "st-joseph-our-lady-of-the-lake-catholic": ["#00205b", "#ffcb05"],
+  "stephenson": ["#0033a0", "#ffcb05"],
+  "sterling-heights-parkway-christian": ["#0033a0", "#c8102e"],
+  "suttons-bay": ["#c8102e", "#ffffff"],
+  "taylor-trillium-academy": ["#0033a0", "#ffffff"],
+  "tekonsha": ["#c8102e", "#ffffff"],
+  "three-oaks-river-valley": ["#00205b", "#ffffff"],
+  "traverse-city-christian": ["#9b1b30", "#ffcb05"],
+  "ubly": ["#e87722", "#111111"],
+  "vandercook-lake": ["#c8102e", "#ffffff"],
+  "vestaburg": ["#c8102e", "#ffffff"],
+  "wakefield-marenisco": ["#c8102e", "#ffffff"],
+  "waldron": ["#111111", "#ffffff"],
+  "walkerville": ["#c8102e", "#ffffff"],
+  "warren-michigan-math-science": ["#0033a0", "#ffffff"],
+  "waterford-our-lady-of-the-lakes": ["#00205b", "#ffcb05"],
+  "watersmeet": ["#0033a0", "#ffcb05"],
+  "watervliet-grace-christian": ["#0033a0", "#ffcb05"],
+  "webberville": ["#0033a0", "#ffcb05"],
+  "west-bloomfield-fja": ["#18453b", "#ffffff"],
+  "westland-hope-christian-academy": ["#00205b", "#ffcb05"],
+  "whitmore-lake": ["#c8102e", "#ffffff"],
+  "whittemore-prescott": ["#c8102e", "#ffffff"],
+  "wolverine": ["#00205b", "#ffcb05"],
+  "wyoming-tri-unity-christian": ["#0033a0", "#ffffff"],
+  "wyoming-west-michigan-lutheran": ["#00205b", "#ffffff"]
 };
 function teamAbbr(t) {
   const raw = String(t && t.name || "RR").replace(/[^a-zA-Z\s]/g, " ");
@@ -2531,8 +3219,7 @@ function hashHue(s) {
 function teamColors(t) {
   const id = (t && t.id) || "";
   if (SCHOOL_COLORS[id]) return SCHOOL_COLORS[id];
-  const hue = hashHue(id || (t && t.name) || "x");
-  return ["hsl(" + hue + ",55%,22%)", "hsl(" + ((hue + 40) % 360) + ",70%,62%)"];
+  return ["#00205b", "#ffcb05"];
 }
 function teamLetters(t) { return teamAbbr(t); }
 function firstWeekGames() {
@@ -2627,7 +3314,7 @@ function followBar() {
         <input id="followSearch" class="search" placeholder="Add a team" autocomplete="off" />
         <div id="followList" class="suggest-list" style="display:none"></div>
       </div>` : `<p style="color:var(--muted);font-size:.9rem">Log in to follow teams.</p><button class="follow-btn" data-page-jump="account">Log in</button>`}
-      ${list.length ? rows : (logged ? "<p style='color:var(--muted);font-size:.9rem'>No teams yet. Search to add your schools.</p>" : "")}
+      ${list.length ? rows : (logged ? "" : "")}
     </section>`;
 }
 
@@ -2801,7 +3488,7 @@ function homePage() {
         </div>
       </div>
       <p style="margin-top:14px"><button class="follow-btn" id="shareGotw" type="button">Share this game</button></p>
-      <p><button class="back" data-page-jump="big" style="padding:0">See all big games →</button></p>
+      <p><button class="back" data-page-jump="big" style="padding:0">See all games of the week →</button></p>
     </section>`;
 }
 
@@ -2863,7 +3550,7 @@ function undefeatedPage() {
 function rankingsPage() {
   const rows = filteredTeams();
   const focusName = teamFocus ? (teamById(teamFocus)||{}).name : "";
-  return `<section class="hero"><h2>Rankings</h2><p>${DATA.teams.length} teams. Divisions from MHSAA. Preseason ratings from all 2025-26 MHSAA boys scores (about 8,000 games). Records are 0-0 for 2026-27. Elo is the preseason rating from last year.</p></section>
+  return `<section class="hero"><h2>Rankings</h2></section>
     ${focusBar()}
     <div class="match-suggest" style="margin-bottom:12px">
       <input id="rankSearch" class="search" placeholder="Search a team" autocomplete="off" />
@@ -2939,7 +3626,7 @@ function pastPage() {
       <section class="card">${last.length ? last.map(g => lastYearRow(g, t.id)).join("") : "<p style='color:var(--muted)'>No last-season games found.</p>"}</section>`;
   }
   const results = pastGames();
-  return `<section class="hero"><h2>Past games</h2><p>2026-27 results will collect here. Open a team for the full 2025-26 slate.</p></section>
+  return `<section class="hero"><h2>Past games</h2></section>
     <section class="card">${results.length ? results.map(g => pastRow(g)).join("") : "<p style='color:var(--muted)'>No 2026-27 games yet. Search a team to see last season.</p>"}</section>`;
 }
 
@@ -2948,7 +3635,7 @@ function teamsListPage() {
   const list = ranked().filter(t =>
     t.name.toLowerCase().includes(q) || t.city.toLowerCase().includes(q) || t.mascot.toLowerCase().includes(q)
   );
-  return `<section class="hero"><h2>Teams</h2><p>${DATA.teams.length} MHSAA boys varsity programs with official 2025-26 divisions.</p></section>
+  return `<section class="hero"><h2>Teams</h2></section>
     <input class="search" id="teamSearch" placeholder="Search team or city" value="${teamQuery}" />
     <section class="card">
       ${list.map(t => `<div class="team-row" data-team="${t.id}">
@@ -3033,7 +3720,7 @@ function matchupPage() {
   const fake = { date: "2026-12-01", homeId: home.id, awayId: away.id, status: "scheduled", homeScore: null, awayScore: null };
   const block = gameRow(fake, true, false, true);
   SYSTEM.homeCourtPoints = saved;
-  return `<section class="hero"><h2>Matchup calculator</h2><p>Search two teams and pick a site. ${siteNote}.</p>
+  return `<section class="hero"><h2>Matchup calculator</h2>
     <p><button class="follow-btn" id="shareMatchup" type="button">Share this matchup</button></p></section>
     <section class="card" style="margin-bottom:14px">
       <div class="match-box">
@@ -3150,6 +3837,45 @@ function accountPage() {
       <button id="suBtn" style="width:100%;margin-top:8px;background:var(--card-2);color:var(--maize);border:1px solid var(--line);border-radius:12px;padding:12px;font-weight:800;cursor:pointer">Create account</button>
     </section>`;
 }
+
+function pickFeatCard(g, i, withPicks) {
+  const home = teamById(g.homeId);
+  const away = teamById(g.awayId);
+  const p = gamePred(g);
+  const final = g.status === "final";
+  const mid = final
+    ? `<div class="vs">FINAL</div><b>${g.awayScore}–${g.homeScore}</b>`
+    : `<div class="vs">VS</div><span style="display:block;font-size:.62rem;letter-spacing:.12em;font-weight:800;color:var(--maize);margin:4px 0 2px">PREDICTED SCORE</span><b>${p.predAway}–${p.predHome}</b>`;
+  let picks = "";
+  if (withPicks && !final) {
+    const mine = myPicks()[g.id];
+    const c = coverText(g);
+    const locked = picksLocked();
+    picks = `<div class="pick-note" style="margin-top:8px"><b>Against the spread.</b> ${c.line}</div>
+      <div class="pick-bar">
+        <button data-pick="${g.id}" data-side="away" class="${mine==="away"?"on":""}" ${locked?"disabled":""}>${c.awayBtn}</button>
+        <button data-pick="${g.id}" data-side="home" class="${mine==="home"?"on":""}" ${locked?"disabled":""}>${c.homeBtn}</button>
+      </div>`;
+  }
+  return `<article class="pick-feat">
+    <div class="gotw-rank"><b>#${i+1}</b><span>${p.spreadLabel}</span></div>
+    <div class="feat-vs">
+      <div class="feat-team">
+        <div class="crest" style="background:${teamColors(away)[0]};color:${teamColors(away)[1]};border-color:${teamColors(away)[1]}">${teamAbbr(away)}</div>
+        <strong>${away.name}</strong>
+        <span>${record(away)} · D${away.division}</span>
+      </div>
+      <div class="feat-mid">${mid}<span style="display:block;margin-top:4px;color:var(--muted);font-size:.75rem">${fmtDate(g.date)}</span></div>
+      <div class="feat-team">
+        <div class="crest" style="background:${teamColors(home)[0]};color:${teamColors(home)[1]};border-color:${teamColors(home)[1]}">${teamAbbr(home)}</div>
+        <strong>${home.name}</strong>
+        <span>${record(home)} · D${home.division} · HOME</span>
+      </div>
+    </div>
+    ${picks}
+  </article>`;
+}
+
 function picksPage() {
   const b = loadBoard();
   const slate = pickWeekGames();
@@ -3159,7 +3885,6 @@ function picksPage() {
   return `<section class="hero">
       <h2>Against the spread</h2>
       <p><button class="follow-btn" id="sharePicks" type="button">Share this week’s picks</button></p>
-      <p>Each week has 10 games. Pick <b>who covers the listed spread</b>, not just who wins. Each correct cover is 1 point. A push (lands exactly on the number) is no point. Not betting. No coins, no cash.</p>
       <p style="color:var(--maize);font-weight:700">${lockClockText()}</p>
       <p>Your week: <span class="record-pill">${meWeek.pts} pts · ${meWeek.w}–${meWeek.l}</span>
          All-time: <span class="record-pill">${meAll.decided ? (meAll.pct*100).toFixed(1)+"%" : "—"} · ${meAll.w}–${meAll.l}</span></p>
@@ -3190,9 +3915,9 @@ function picksPage() {
     <section class="card" style="margin-bottom:14px">
       <div id="openWeekGames" style="cursor:pointer">
         <h3>This week’s games ${showWeekGames ? "▲" : "▼"}</h3>
-        <p style="color:var(--muted);font-size:.9rem">${showWeekGames ? "Tap to hide the 10 games" : "Tap to show this week’s 12 games"}</p>
+        <p style="color:var(--muted);font-size:.9rem">${showWeekGames ? "Tap to hide the 10 games" : "Tap to show this week’s 10 games"}</p>
       </div>
-      ${showWeekGames ? (slate.length ? slate.map((x,i) => `<div style="color:var(--maize);font-weight:800;font-size:.8rem;margin:10px 0 2px">#${i+1}</div>${gameRow(x.g, true, !picksLocked())}`).join("") : "<p style='color:var(--muted)'>No upcoming games to pick.</p>") : ""}
+      ${showWeekGames ? (slate.length ? `<div class="gotw-list" style="margin-top:10px">${slate.map((x,i) => pickFeatCard(x.g, i, !picksLocked())).join("")}</div>` : "<p style='color:var(--muted)'>No upcoming games to pick.</p>") : ""}
     </section>
     ${slate.length ? (isConfirmed() ? `<section class="card confirm-box">
       <button id="toggleMyPicks" style="width:100%;text-align:left;background:transparent;border:0;color:var(--text);cursor:pointer;padding:0">
