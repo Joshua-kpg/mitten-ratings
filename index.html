@@ -405,6 +405,26 @@
 
 
   </style>
+<style id="hdr-fix">
+  /* Header cleanup: title never covered, short account chip, Add-to-Home moved to a dismissible bar */
+  .brand { flex-wrap: nowrap; }
+  .brand .logo { flex: 1 1 auto; min-width: 0; }
+  .brand .logo > div { min-width: 0; }
+  .brand .logo h1, .brand .logo p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  @media (max-width: 380px) { .brand .logo h1 { font-size: 1.2rem; } }
+  .acct-chip { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; max-width: min(36%, 130px);
+    background: var(--card-2, #132339); border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px 4px 4px;
+    color: var(--text, #f4f1e8); font-weight: 700; font-size: 13px; cursor: pointer; line-height: 1.2; }
+  .acct-chip.out { padding: 6px 12px; color: var(--maize); }
+  .acct-ini { flex: 0 0 auto; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--maize); color: var(--blue); font-weight: 800; font-size: 12px; }
+  .acct-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .a2hs-bar { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 6px 8px 6px 12px;
+    background: rgba(255, 203, 5, .10); border: 1px solid rgba(255, 203, 5, .35); border-radius: 12px; }
+  .a2hs-bar[hidden] { display: none; }
+  .a2hs-open { flex: 1; text-align: left; background: none; border: 0; color: var(--maize); font-weight: 700; font-size: 13px; cursor: pointer; padding: 2px 0; }
+  .a2hs-x { background: none; border: 0; color: var(--muted); font-size: 15px; cursor: pointer; padding: 2px 6px; }
+</style>
 </head>
 <body>
   <header>
@@ -417,8 +437,11 @@
           </div>
         </div>
         
-        <button id="addHomeBtn" type="button" style="margin-left:auto;background:var(--maize);color:var(--blue);border:0;border-radius:999px;padding:4px 10px;font-weight:800;cursor:pointer;font-size:.72rem">Add to Home Screen</button>
-        <button id="acctBtn" type="button" style="margin-left:8px;background:none;border:0;color:var(--muted);padding:4px 0;font-weight:600;cursor:pointer;font-size:13px">Log in</button>
+        <button id="acctBtn" class="acct-chip" type="button"><span class="acct-name">Log in</span></button>
+      </div>
+      <div id="a2hsBar" class="a2hs-bar" hidden>
+        <button id="addHomeBtn" class="a2hs-open" type="button">＋ Add to Home Screen</button>
+        <button id="a2hsX" class="a2hs-x" type="button" aria-label="Hide this">✕</button>
       </div>
     </div>
   </header>
@@ -8330,6 +8353,121 @@ function writeLocalUser(name, pass) {
 function looksLikeEmail(s) {
   return /@/.test(s || "");
 }
+/* NAME LOGIN — lets people log in with their name OR their email.
+   Each account gets a private "name key": a second Firebase Auth login <name>@NAME_KEY_DOMAIN
+   (<name>+2@…, +3@… after a password reset or if someone else holds the plain key) with the same password.
+   The key's Auth displayName holds the real account email, so only someone who knows the password can read it.
+   Nothing is written to Firestore and no email is ever publicly readable. Keys are created at sign-up and
+   back-filled on any email login (so older accounts get name login after one email login). */
+const NAME_KEY_DOMAIN = "mittenratings.app";
+const NAME_KEY_MAX = 6;
+let fbNameAuth = null;
+async function nameKeyAuth() {
+  if (fbNameAuth) return fbNameAuth;
+  const app = firebase.apps.find(a => a.name === "nameKey") || firebase.initializeApp(FIREBASE_CONFIG, "nameKey");
+  const na = app.auth();
+  try { await na.setPersistence(firebase.auth.Auth.Persistence.NONE); } catch (e) {}
+  fbNameAuth = na;
+  return na;
+}
+function nameKeyBase(name) {
+  return String(name || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/^\.+|\.+$/g, "").slice(0, 48);
+}
+function nameKeyEmail(base, k) {
+  return base + (k > 1 ? "+" + k : "") + "@" + NAME_KEY_DOMAIN;
+}
+function isBadCredential(e) {
+  const c = (e && e.code) || "";
+  // too-many-requests: Firebase briefly locks a login after failed tries (e.g. an old key after a password reset); just skip it.
+  return ["auth/invalid-credential", "auth/wrong-password", "auth/user-not-found", "auth/invalid-login-credentials", "auth/user-disabled", "auth/too-many-requests"].indexOf(c) >= 0;
+}
+// Remember (on this device only) which key number worked for a name, so stale keys are not retried first.
+function nameKeyOrder(base) {
+  let hit = 0;
+  try { hit = Number((JSON.parse(localStorage.getItem("rrNameKeyIdx") || "{}"))[base]) || 0; } catch (e) {}
+  const order = [];
+  if (hit >= 1 && hit <= NAME_KEY_MAX) order.push(hit);
+  for (let k = 1; k <= NAME_KEY_MAX; k++) if (k !== hit) order.push(k);
+  return order;
+}
+function rememberNameKey(base, k) {
+  try { const m = JSON.parse(localStorage.getItem("rrNameKeyIdx") || "{}"); m[base] = k; localStorage.setItem("rrNameKeyIdx", JSON.stringify(m)); } catch (e) {}
+}
+async function nameKeySignOut(na) { try { await na.signOut(); } catch (e) {} }
+// Name + password -> the account's real email (or null). Signs in to the key on a separate, non-persistent auth instance.
+async function emailForName(name, pass) {
+  const base = nameKeyBase(name);
+  if (!base) return null;
+  const na = await nameKeyAuth();
+  for (const k of nameKeyOrder(base)) {
+    try {
+      const cred = await na.signInWithEmailAndPassword(nameKeyEmail(base, k), pass);
+      const mail = String(cred.user.displayName || "").trim();
+      await nameKeySignOut(na);
+      if (looksLikeEmail(mail)) { rememberNameKey(base, k); return mail; }
+    } catch (e) {
+      if (!isBadCredential(e)) throw e;
+    }
+  }
+  return null;
+}
+// Make sure this name + password opens a key that points at mail. Safe to call on every login.
+async function ensureNameKey(name, mail, pass) {
+  const base = nameKeyBase(name);
+  const want = String(mail || "").trim().toLowerCase();
+  if (!base || looksLikeEmail(name) || !looksLikeEmail(want) || want.endsWith("@" + NAME_KEY_DOMAIN)) return "skip";
+  const na = await nameKeyAuth();
+  for (const k of nameKeyOrder(base)) {
+    const key = nameKeyEmail(base, k);
+    try {
+      const cred = await na.signInWithEmailAndPassword(key, pass);
+      const owner = String(cred.user.displayName || "").trim().toLowerCase();
+      await nameKeySignOut(na);
+      if (owner === want) { rememberNameKey(base, k); return "ok"; }
+      continue;
+    } catch (e) {
+      if (e && e.code === "auth/too-many-requests") continue;   // locked for now: can't tell whose it is, leave it
+      if (!isBadCredential(e)) { await nameKeySignOut(na); return "error"; }
+    }
+    try {
+      const cred = await na.createUserWithEmailAndPassword(key, pass);
+      await cred.user.updateProfile({ displayName: want });
+      await nameKeySignOut(na);
+      rememberNameKey(base, k);
+      return "created";
+    } catch (e) {
+      await nameKeySignOut(na);
+      if (!(e && e.code === "auth/email-already-in-use")) return "error";
+    }
+  }
+  return "full";
+}
+// Sign-up: claim the plain key for a new name. Returns "" or an error message.
+async function claimNameKey(name, mail, pass) {
+  const base = nameKeyBase(name);
+  if (!base) return "Use some letters or numbers in your name.";
+  const na = await nameKeyAuth();
+  const key = nameKeyEmail(base, 1);
+  try {
+    const cred = await na.createUserWithEmailAndPassword(key, pass);
+    await cred.user.updateProfile({ displayName: mail });
+    await nameKeySignOut(na);
+    return "";
+  } catch (e) {
+    if (!(e && e.code === "auth/email-already-in-use")) { await nameKeySignOut(na); throw e; }
+  }
+  try {
+    // Already exists: fine only if it is this person's own key (they know its password), e.g. a retried sign-up.
+    const cred = await na.signInWithEmailAndPassword(key, pass);
+    await cred.user.updateProfile({ displayName: mail });
+    await nameKeySignOut(na);
+    return "";
+  } catch (e) {
+    await nameKeySignOut(na);
+    if (isBadCredential(e)) return "That name is taken. Pick a different name.";
+    throw e;
+  }
+}
 async function resetPassword(email) {
   const mail = (email || "").trim();
   if (!looksLikeEmail(mail)) return "Enter the email on the account.";
@@ -8353,6 +8491,8 @@ async function signup(user, pass, email) {
   if (cloudOn()) {
     try {
       initCloud();
+      const nameErr = await claimNameKey(name, mail, pass);
+      if (nameErr) return nameErr;
       await fbAuth.createUserWithEmailAndPassword(mail, pass);
       await fbAuth.currentUser.updateProfile({ displayName: name });
       await fbDb.collection("profiles").doc(fbAuth.currentUser.uid).set({ name, email: mail, created: Date.now() }, { merge: true });
@@ -8369,11 +8509,15 @@ async function login(user, pass) {
   if (cloudOn()) {
     try {
       initCloud();
-      const emailTry = looksLikeEmail(name) ? name : authEmail(name);
-      await fbAuth.signInWithEmailAndPassword(emailTry, pass);
+      let emailTry = looksLikeEmail(name) ? name : null;
+      if (!emailTry) emailTry = await emailForName(name, pass).catch(() => null);
+      // Last resort for very old name-only accounts: the original <name>@domain login.
+      await fbAuth.signInWithEmailAndPassword(emailTry || authEmail(name), pass);
       const prof = await fbDb.collection("profiles").doc(fbAuth.currentUser.uid).get();
       const display = (prof.exists && prof.data().name) || fbAuth.currentUser.displayName || name;
       writeLocalUser(display, pass);
+      // Back-fill / repair the name key so "name + password" works next time (older accounts, password resets).
+      await ensureNameKey(display, fbAuth.currentUser.email, pass).catch(() => "error");
       await pullCloudBoard();
       await pullCloudFollows();
       return "";
@@ -8384,7 +8528,8 @@ async function login(user, pass) {
         writeLocalUser(rec.user, pass);
         return "";
       }
-      return e.message || "Name or password is wrong.";
+      if (!looksLikeEmail(name)) return "Name or password is wrong. If your account is older or you just reset your password, log in with your email once. After that your name works too.";
+      return e.message || "Email or password is wrong.";
     }
   }
   const a = loadAuth();
@@ -8708,7 +8853,13 @@ function renderNav() {
   const ab = document.getElementById("acctBtn");
   if (ab) {
     const u = currentUser();
-    ab.textContent = u ? u.user : "Log in";
+    const shown = u ? shortDisplayName(u.user) : "Log in";
+    ab.classList.toggle("out", !u);
+    ab.innerHTML = u
+      ? `<span class="acct-ini">${escHtml((shown.match(/[a-z0-9]/i) || ["?"])[0].toUpperCase())}</span><span class="acct-name">${escHtml(shown)}</span>`
+      : `<span class="acct-name">Log in</span>`;
+    ab.title = u ? "Account: " + shown : "Log in";
+    ab.setAttribute("aria-label", ab.title);
     ab.onclick = () => {
       selectedTeam = null;
       if (u) { profileName = u.user; page = "profile"; }
@@ -10728,6 +10879,27 @@ if (!window.rrHomeBound) {
     }
   });
 }
+// Header helpers: never show an email in the header; Add-to-Home bar only on phones, not installed, not dismissed.
+function shortDisplayName(n) {
+  const s = String(n || "").trim();
+  return (s.indexOf("@") > 0 ? s.slice(0, s.indexOf("@")) : s) || "Account";
+}
+function escHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+(function setupA2hsBar() {
+  const bar = document.getElementById("a2hsBar");
+  if (!bar) return;
+  const KEY = "rrA2hsHidden";
+  const standalone = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || window.navigator.standalone === true;
+  const phone = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  let hidden = false;
+  try { hidden = localStorage.getItem(KEY) === "1"; } catch (e) {}
+  bar.hidden = standalone || !phone || hidden;
+  const x = document.getElementById("a2hsX");
+  if (x) x.onclick = () => { bar.hidden = true; try { localStorage.setItem(KEY, "1"); } catch (e) {} };
+})();
+
 initCloud();
 applyShareQuery();
 applySeasonFade();
