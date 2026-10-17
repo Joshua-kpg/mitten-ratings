@@ -1,0 +1,3 @@
+# Rim Runner moved to Cloudflare Pages (2026-10-17). Netlify only: send every path to the same path on the new site.
+# Not used by Cloudflare: scripts/cf_prepare.py never copies this file.
+/*  https://rimrunner.pages.dev/:splat  301!
