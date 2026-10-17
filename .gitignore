@@ -1,0 +1,3 @@
+_deploy/
+_deploy_sync/
+.cf_sync_hash

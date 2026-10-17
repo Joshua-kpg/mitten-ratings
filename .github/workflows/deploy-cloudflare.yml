@@ -1,0 +1,46 @@
+name: Deploy to Cloudflare Pages
+
+# Publishes the site to https://rimrunner.pages.dev (Cloudflare Pages project "rimrunner", free plan).
+# Runs on every push to main, after the "Fetch scores" workflow finishes (its bot commits do not
+# trigger push events), or by hand from the Actions tab.
+on:
+  push:
+    branches: [main]
+  workflow_run:
+    workflows: ["Fetch scores"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CF_TOKEN_PRESENT: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Build deploy folder
+        run: python3 scripts/cf_prepare.py . _deploy
+
+      - name: Skip (no API token secret)
+        if: env.CF_TOKEN_PRESENT != 'true'
+        run: echo "::warning title=Cloudflare deploy skipped::Repository secret CLOUDFLARE_API_TOKEN is not set (Account > Cloudflare Pages > Edit). The bot computer's sync routine publishes instead."
+
+      - name: Deploy to Cloudflare Pages
+        if: env.CF_TOKEN_PRESENT == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: 886fae922152509de20cdfb880c41a1c
+          command: pages deploy _deploy --project-name rimrunner --branch main --commit-dirty=true
